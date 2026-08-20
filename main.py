@@ -68,11 +68,26 @@ class SteamFamilyPlugin(Star):
                 )
                 await self.web_server.start()
 
-            # Start background polling
+            # Execute immediate initial sync if credentials are configured
+            if (self.config.access_token or self.config.cookie) and self.config.steam_id:
+                asyncio.create_task(self._check_and_notify())
+
+            # Start background polling loop
             self._polling_task = asyncio.create_task(self._polling_loop())
             logger.info("Steam Family Plugin initialized successfully.")
         except Exception as e:
             logger.error(f"Error during plugin startup: {e}")
+
+    async def _warmup_app_details(self, apps: list):
+        """Asynchronously warm up cache for apps in the background."""
+        for app in apps[:30]:
+            try:
+                details = await self.client.get_app_details(app.appid)
+                if details:
+                    await self.storage.cache_app_details(details)
+                await asyncio.sleep(0.3)
+            except Exception as e:
+                logger.debug(f"Detail warmup skipped for app {app.appid}: {e}")
 
     async def _check_and_notify(self) -> str:
         # Check token or attempt auto-refresh
@@ -118,8 +133,10 @@ class SteamFamilyPlugin(Star):
             await self.storage.save_snapshot(current_apps)
 
             if diff.is_first_run:
+                # Background cache details for top games
+                asyncio.create_task(self._warmup_app_details(current_apps))
                 logger.info(f"Steam Family initial baseline saved with {len(current_apps)} games.")
-                return f"家庭库基线数据已建立，共同步 {len(current_apps)} 款游戏。"
+                return f"家庭库基线数据已建立，共同步 {len(current_apps)} 款游戏！资产大盘与义父榜已实时更新。"
 
             if not diff.has_changes:
                 return "家庭库检查完成：暂无游戏变动。"
@@ -188,7 +205,8 @@ class SteamFamilyPlugin(Star):
         self.config.access_token = access_token
         if steam_id:
             self.config.steam_id = steam_id
-        yield event.plain_result("✅ Steam 凭据绑定成功！输入 /steam_check 可立即拉取家庭库。")
+        yield event.plain_result("✅ Steam 凭据绑定成功！正在立即拉取家庭库并更新大盘数据...")
+        asyncio.create_task(self._check_and_notify())
 
     @filter.command("steam_check")
     async def cmd_check(self, event: AstrMessageEvent):

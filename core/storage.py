@@ -94,7 +94,7 @@ class FamilyStorage:
                 for owner in app.owner_steamids:
                     await db.execute(
                         "INSERT OR IGNORE INTO app_ownership (appid, owner_steamid) VALUES (?, ?)",
-                        (app.appid, owner)
+                        (app.appid, str(owner))
                     )
             await db.commit()
             return snapshot_id or 0
@@ -183,7 +183,7 @@ class FamilyStorage:
                 FROM app_ownership o
                 LEFT JOIN apps_cache c ON o.appid = c.appid
                 GROUP BY o.owner_steamid
-                ORDER BY total_initial DESC
+                ORDER BY total_initial DESC, game_count DESC
             """
             async with db.execute(sql) as cursor:
                 rows = await cursor.fetchall()
@@ -236,14 +236,10 @@ class FamilyStorage:
         
         total_initial = sum(r["total_initial_price"] for r in rankings)
         total_final = sum(r["total_current_price"] for r in rankings)
-        
-        return {
-            "total_games": len(snapshot) if snapshot else 0,
-            "total_initial_value": round(total_initial, 2),
-            "total_current_value": round(total_final, 2),
-            "member_count": len(rankings),
-            "rankings": rankings,
-            "recent_games": [
+
+        recent_games = []
+        if cached_apps:
+            recent_games = [
                 {
                     "appid": a.appid,
                     "name": a.chinese_name or a.name,
@@ -254,4 +250,25 @@ class FamilyStorage:
                 }
                 for a in cached_apps[:12]
             ]
+        elif snapshot:
+            # Fallback when details are still caching
+            recent_games = [
+                {
+                    "appid": app.appid,
+                    "name": app.name,
+                    "header_image": f"https://cdn.akamai.steamstatic.com/steam/apps/{app.appid}/header.jpg",
+                    "final_price": 0.0,
+                    "positive_rate": 95,
+                    "genres": ["Steam 共享"]
+                }
+                for app in list(snapshot.values())[:12]
+            ]
+        
+        return {
+            "total_games": len(snapshot) if snapshot else 0,
+            "total_initial_value": round(total_initial, 2),
+            "total_current_value": round(total_final, 2),
+            "member_count": len(rankings),
+            "rankings": rankings,
+            "recent_games": recent_games
         }
