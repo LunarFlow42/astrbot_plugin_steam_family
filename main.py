@@ -241,9 +241,23 @@ class SteamFamilyPlugin(Star):
         result = await self._check_and_notify()
         yield event.plain_result(result)
 
+    @filter.command("steam check")
+    async def cmd_check_alias(self, event: AstrMessageEvent):
+        """手动触发一次家庭库变动检查与同步 (别名)。"""
+        yield event.plain_result("⏳ 正在向 Steam 请求家庭库数据，请稍候...")
+        result = await self._check_and_notify()
+        yield event.plain_result(result)
+
     @filter.command("steam_sub")
     async def cmd_sub(self, event: AstrMessageEvent):
         """订阅当前群/私聊的家庭库新游戏变动推送。"""
+        target_id = getattr(event, "unified_msg_origin", str(event))
+        await self.storage.subscribe(target_id)
+        yield event.plain_result("🔔 已成功订阅当前会话的 Steam 家庭库变动推送通知！")
+
+    @filter.command("steam sub")
+    async def cmd_sub_alias(self, event: AstrMessageEvent):
+        """订阅当前群/私聊的家庭库新游戏变动推送 (别名)。"""
         target_id = getattr(event, "unified_msg_origin", str(event))
         await self.storage.subscribe(target_id)
         yield event.plain_result("🔔 已成功订阅当前会话的 Steam 家庭库变动推送通知！")
@@ -286,6 +300,22 @@ class SteamFamilyPlugin(Star):
         host_display = "127.0.0.1" if self.config.dashboard_host in ("0.0.0.0", "") else self.config.dashboard_host
         url = f"http://{host_display}:{self.config.dashboard_port}"
         yield event.plain_result(f"📊 Steam 家庭资产全景 Web 看板地址：\n{url}\n(支持远程浏览器访问)")
+
+    @filter.command("steam help")
+    async def cmd_help(self, event: AstrMessageEvent):
+        """查看 Steam 家庭管家所有支持的指令列表。"""
+        help_msg = (
+            "🎮 【Steam 家庭资产管家指令列表】\n"
+            "• /steam_check 或 /steam check - 立即同步检查家庭库变动\n"
+            "• /steam_sub 或 /steam sub - 开启当前群的新游戏入库卡片推送\n"
+            "• /steam_unsub - 取消当前群变动推送\n"
+            "• /steam rank - 查看家庭组义父资产贡献榜\n"
+            "• /steam roll [标签] - 赛博轮盘随机抽取游戏\n"
+            "• /steam coop <SteamID...> - 开黑车队雷达 (计算共有游戏)\n"
+            "• /steam dashboard - 获取实时 Web 全景看板链接\n"
+            "• /steam_bind <Token> <SteamID> - 重新绑定鉴权凭据"
+        )
+        yield event.plain_result(help_msg)
 
     # --- Agent LLM Tools ---
     @filter.llm_tool(name="query_family_games")
