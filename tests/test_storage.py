@@ -1,6 +1,6 @@
 import pytest
-from astrbot_plugin_steam_family.core.storage import FamilyStorage
-from astrbot_plugin_steam_family.core.steam_api import SharedApp, AppDetails
+from core.storage import FamilyStorage
+from core.steam_api import SharedApp, AppDetails
 
 @pytest.mark.asyncio
 async def test_storage_lifecycle(tmp_path):

@@ -1,5 +1,5 @@
 import pytest
-from astrbot_plugin_steam_family.core.renderer import CardRenderer
+from core.renderer import CardRenderer
 
 def test_template_rendering():
     renderer = CardRenderer()

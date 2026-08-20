@@ -2,11 +2,11 @@ import asyncio
 import os
 import shutil
 from pathlib import Path
-from astrbot_plugin_steam_family.core.storage import FamilyStorage
-from astrbot_plugin_steam_family.core.diff_engine import FamilyDiffEngine
-from astrbot_plugin_steam_family.core.renderer import CardRenderer
-from astrbot_plugin_steam_family.agent.tools import SteamAgentTools
-from astrbot_plugin_steam_family.core.steam_api import SharedApp, AppDetails
+from core.storage import FamilyStorage
+from core.diff_engine import FamilyDiffEngine
+from core.renderer import CardRenderer
+from agent.tools import SteamAgentTools
+from core.steam_api import SharedApp, AppDetails
 
 async def main():
     print("\n" + "=" * 60)

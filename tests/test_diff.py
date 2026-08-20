@@ -1,6 +1,6 @@
 import pytest
-from astrbot_plugin_steam_family.core.diff_engine import FamilyDiffEngine
-from astrbot_plugin_steam_family.core.steam_api import SharedApp
+from core.diff_engine import FamilyDiffEngine
+from core.steam_api import SharedApp
 
 def test_first_run_diff():
     engine = FamilyDiffEngine()

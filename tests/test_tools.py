@@ -1,7 +1,7 @@
 import pytest
-from astrbot_plugin_steam_family.core.storage import FamilyStorage
-from astrbot_plugin_steam_family.core.steam_api import SharedApp, AppDetails
-from astrbot_plugin_steam_family.agent.tools import SteamAgentTools
+from core.storage import FamilyStorage
+from core.steam_api import SharedApp, AppDetails
+from agent.tools import SteamAgentTools
 
 @pytest.mark.asyncio
 async def test_agent_tools_queries(tmp_path):

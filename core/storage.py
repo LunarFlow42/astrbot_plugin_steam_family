@@ -3,7 +3,10 @@ import logging
 from pathlib import Path
 from typing import Any
 import aiosqlite
-from astrbot_plugin_steam_family.core.steam_api import SharedApp, AppDetails
+try:
+    from .steam_api import SharedApp, AppDetails
+except (ImportError, ValueError):
+    from core.steam_api import SharedApp, AppDetails
 
 logger = logging.getLogger(__name__)
 

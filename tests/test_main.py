@@ -41,8 +41,8 @@ if "astrbot.api.message_components" not in sys.modules:
     mock_comp_module.Image = MagicMock()
     sys.modules["astrbot.api.message_components"] = mock_comp_module
 
-from astrbot_plugin_steam_family.main import SteamFamilyPlugin
-from astrbot_plugin_steam_family.config import PluginConfig
+from main import SteamFamilyPlugin
+from config import PluginConfig
 
 @pytest.mark.asyncio
 async def test_plugin_init_and_bind():

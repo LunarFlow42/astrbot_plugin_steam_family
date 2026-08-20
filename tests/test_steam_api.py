@@ -1,5 +1,5 @@
 import pytest
-from astrbot_plugin_steam_family.core.steam_api import SteamFamilyClient, SharedApp, AppDetails
+from core.steam_api import SteamFamilyClient, SharedApp, AppDetails
 from tests.mock_data import MOCK_FAMILY_APPS_RESPONSE, MOCK_APP_DETAILS_RESPONSE
 
 @pytest.mark.asyncio

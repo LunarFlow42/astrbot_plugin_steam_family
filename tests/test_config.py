@@ -1,4 +1,4 @@
-from astrbot_plugin_steam_family.config import PluginConfig
+from config import PluginConfig
 
 def test_default_config():
     config = PluginConfig()

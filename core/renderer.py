@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class CardRenderer:
     def __init__(self, template_dir: str | Path | None = None):
         if template_dir is None:
-            template_dir = Path(__file__).parent.parent.parent.parent / "assets" / "templates"
+            template_dir = Path(__file__).parent.parent / "assets" / "templates"
         self.template_dir = Path(template_dir)
         self.env = Environment(loader=FileSystemLoader(str(self.template_dir)))
         self._browser = None

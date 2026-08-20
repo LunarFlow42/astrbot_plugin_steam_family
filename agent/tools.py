@@ -1,7 +1,10 @@
 import random
 import logging
 from typing import Any
-from astrbot_plugin_steam_family.core.storage import FamilyStorage
+try:
+    from ..core.storage import FamilyStorage
+except (ImportError, ValueError):
+    from core.storage import FamilyStorage
 
 logger = logging.getLogger(__name__)
 
