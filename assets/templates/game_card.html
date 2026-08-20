@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    body {
+      width: 720px;
+      padding: 20px;
+      background: #0b0e14;
+      color: #e1e7ee;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .card {
+      width: 100%;
+      background: linear-gradient(145deg, #17202d 0%, #0f141d 100%);
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75);
+      border: 1px solid rgba(102, 192, 244, 0.2);
+      position: relative;
+    }
+    .header-banner {
+      width: 100%;
+      height: 290px;
+      position: relative;
+      background: #000;
+      overflow: hidden;
+    }
+    .header-banner img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      filter: brightness(0.92);
+      transition: transform 0.3s ease;
+    }
+    .banner-gradient {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 100px;
+      background: linear-gradient(to top, #17202d 0%, rgba(23, 32, 45, 0) 100%);
+    }
+    .badge-tag {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      background: linear-gradient(90deg, #1999e3 0%, #66c0f4 100%);
+      color: #0b0e14;
+      font-weight: 800;
+      font-size: 13px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      backdrop-filter: blur(8px);
+      letter-spacing: 0.6px;
+      box-shadow: 0 4px 15px rgba(25, 153, 227, 0.4);
+    }
+    .content {
+      padding: 22px 26px 26px 26px;
+      position: relative;
+    }
+    .title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+    .title-main {
+      font-size: 26px;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.3;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+    }
+    .title-sub {
+      font-size: 14px;
+      color: #8f98a0;
+      margin-top: 4px;
+    }
+    .owner-info {
+      display: flex;
+      align-items: center;
+      background: rgba(102, 192, 244, 0.08);
+      padding: 10px 18px;
+      border-radius: 12px;
+      margin-bottom: 18px;
+      border: 1px solid rgba(102, 192, 244, 0.15);
+    }
+    .owner-icon {
+      font-size: 18px;
+      margin-right: 8px;
+    }
+    .owner-label {
+      font-size: 13px;
+      color: #66c0f4;
+      font-weight: 700;
+      margin-right: 8px;
+    }
+    .owner-name {
+      font-size: 15px;
+      font-weight: 800;
+      color: #ffffff;
+    }
+    .genre-list {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 18px;
+      flex-wrap: wrap;
+    }
+    .genre-pill {
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 5px 12px;
+      border-radius: 8px;
+      color: #c7d5e0;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .meta-grid {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 16px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .price-box {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+    .price-now {
+      font-size: 24px;
+      font-weight: 900;
+      color: #a4d007;
+      text-shadow: 0 0 12px rgba(164, 208, 7, 0.3);
+    }
+    .price-initial {
+      font-size: 15px;
+      color: #687685;
+      text-decoration: line-through;
+    }
+    .discount-badge {
+      background: #4c6b22;
+      color: #a4d007;
+      font-weight: 900;
+      font-size: 14px;
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+    .review-box {
+      text-align: right;
+    }
+    .review-text {
+      font-size: 15px;
+      font-weight: 800;
+      color: #66c0f4;
+    }
+    .review-rate {
+      font-size: 12px;
+      color: #8f98a0;
+      margin-top: 3px;
+    }
+    .footer-bar {
+      margin-top: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: #556270;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header-banner">
+      <img src="{{ header_image }}" alt="Cover">
+      <div class="badge-tag">✨ STEAM 家庭共享库 · 新入库</div>
+      <div class="banner-gradient"></div>
+    </div>
+    <div class="content">
+      <div class="title-row">
+        <div>
+          <div class="title-main">{{ game_name }}</div>
+          {% if original_name and original_name != game_name %}
+          <div class="title-sub">{{ original_name }}</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="owner-info">
+        <span class="owner-icon">👑</span>
+        <span class="owner-label">入库义父:</span>
+        <span class="owner-name">{{ owner_name }}</span>
+      </div>
+
+      <div class="genre-list">
+        {% for g in genres %}
+        <span class="genre-pill">{{ g }}</span>
+        {% endfor %}
+      </div>
+
+      <div class="meta-grid">
+        <div class="price-box">
+          {% if discount_percent > 0 %}
+          <span class="discount-badge">-{{ discount_percent }}%</span>
+          <span class="price-initial">{{ initial_price }}</span>
+          <span class="price-now">{{ final_price }}</span>
+          {% else %}
+          <span class="price-now">{{ final_price }}</span>
+          {% endif %}
+        </div>
+        <div class="review-box">
+          <div class="review-text">{{ review_summary }}</div>
+          <div class="review-rate">好评率: {{ positive_rate }}%</div>
+        </div>
+      </div>
+
+      <div class="footer-bar">
+        <span>AstrBot Steam Family Plugin</span>
+        <span>AppID: {{ appid }}</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
