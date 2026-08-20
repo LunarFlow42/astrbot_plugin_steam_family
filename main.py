@@ -5,13 +5,13 @@ from astrbot.api.star import Star, register, Context
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.message_components import Plain, Image
 
-# Support both direct import and relative import in AstrBot loader
 try:
     from .config import PluginConfig
     from .core.steam_api import SteamFamilyClient, SteamAuthExpiredError, SteamRateLimitError
     from .core.storage import FamilyStorage
     from .core.diff_engine import FamilyDiffEngine
     from .core.renderer import CardRenderer
+    from .core.web_server import DashboardWebServer
     from .agent.tools import SteamAgentTools
 except (ImportError, ValueError):
     from config import PluginConfig
@@ -19,6 +19,7 @@ except (ImportError, ValueError):
     from core.storage import FamilyStorage
     from core.diff_engine import FamilyDiffEngine
     from core.renderer import CardRenderer
+    from core.web_server import DashboardWebServer
     from agent.tools import SteamAgentTools
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ class SteamFamilyPlugin(Star):
         self.diff_engine = FamilyDiffEngine()
         self.renderer = CardRenderer()
         self.agent_tools = SteamAgentTools(self.storage)
+        self.web_server: DashboardWebServer | None = None
         self._polling_task: asyncio.Task | None = None
 
         # Start async initialization
@@ -48,6 +50,17 @@ class SteamFamilyPlugin(Star):
     async def _init_and_start_polling(self):
         try:
             await self.storage.init_db()
+
+            # Start Web Dashboard Server if enabled
+            if self.config.enable_dashboard_server:
+                self.web_server = DashboardWebServer(
+                    host=self.config.dashboard_host,
+                    port=self.config.dashboard_port,
+                    storage=self.storage,
+                    renderer=self.renderer
+                )
+                await self.web_server.start()
+
             # Start background polling
             self._polling_task = asyncio.create_task(self._polling_loop())
             logger.info("Steam Family Plugin initialized successfully.")
@@ -191,6 +204,16 @@ class SteamFamilyPlugin(Star):
         result = await self.agent_tools.find_coop_games(ids)
         yield event.plain_result(result)
 
+    @filter.command("steam dashboard")
+    async def cmd_dashboard(self, event: AstrMessageEvent):
+        """获取 Steam 家庭资产全景 Web 看板访问地址。"""
+        if not self.config.enable_dashboard_server:
+            yield event.plain_result("Web 看板服务未开启，请在插件配置中开启 enable_dashboard_server。")
+            return
+        host_display = "127.0.0.1" if self.config.dashboard_host in ("0.0.0.0", "") else self.config.dashboard_host
+        url = f"http://{host_display}:{self.config.dashboard_port}"
+        yield event.plain_result(f"📊 Steam 家庭资产全景 Web 看板地址：\n{url}\n(支持远程浏览器访问)")
+
     # --- Agent LLM Tools ---
     @filter.llm_tool(name="query_family_games")
     async def tool_query_family_games(self, event: AstrMessageEvent, keyword: str = "", tag: str = ""):
@@ -210,5 +233,7 @@ class SteamFamilyPlugin(Star):
     async def terminate(self):
         if self._polling_task:
             self._polling_task.cancel()
+        if self.web_server:
+            await self.web_server.stop()
         await self.renderer.close()
         logger.info("Steam Family Plugin terminated.")

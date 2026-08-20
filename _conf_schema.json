@@ -23,6 +23,28 @@
     "hint": "建议设为 15-60 分钟，避免频繁请求触发 429 限流",
     "default": 15
   },
+  "enable_dashboard_server": {
+    "description": "启用独立 Web 资产全景大盘服务",
+    "type": "bool",
+    "hint": "开启后将启动轻量 Web 看板服务，可在浏览器查看家庭库全景资产估值与义父榜",
+    "default": true
+  },
+  "dashboard_host": {
+    "description": "看板监听地址 (可切换远程访问)",
+    "type": "string",
+    "options": [
+      "0.0.0.0",
+      "127.0.0.1"
+    ],
+    "hint": "设为 0.0.0.0 允许局域网/公网远程访问；设为 127.0.0.1 仅限本机访问",
+    "default": "0.0.0.0"
+  },
+  "dashboard_port": {
+    "description": "看板服务监听端口",
+    "type": "int",
+    "hint": "Web 看板服务端口，默认 6188 (访问地址: http://<你的IP>:6188)",
+    "default": 6188
+  },
   "proxy": {
     "description": "网络代理地址",
     "type": "string",
