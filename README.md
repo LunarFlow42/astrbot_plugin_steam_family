@@ -37,23 +37,21 @@
 
 ---
 
-### 2. 获取 Steam Access Token（两种方式）
+### 2. 获取 Steam Access Token（点击直达链接免 F12）
 
-#### 方式 A（一键书签 Bookmarklet，免开 F12 最方便）：
-1. 在浏览器书签栏新建一个书签，名称填 `获取SteamToken`，网址填入：
-   ```javascript
-   javascript:(function(){try{var t=JSON.parse(document.getElementById('application_config').getAttribute('data-loyalty_webapi_token'));prompt('复制你的 Steam Access Token (Ctrl+C):',t);}catch(e){alert('请先在 store.steampowered.com 登录 Steam！');}})();
-   ```
-2. 打开 [Steam 商店首页 (store.steampowered.com)](https://store.steampowered.com/) 并登录；
-3. 点击书签栏上的 `获取SteamToken`，即可直接弹出复制框一键复制 Token！
+👉 **官方直达接口**：在已登录 Steam 的浏览器中直接点击打开：  
+🔗 **[https://store.steampowered.com/pointssummary/ajaxgetasyncconfig](https://store.steampowered.com/pointssummary/ajaxgetasyncconfig)**
 
-#### 方式 B（F12 控制台获取）：
-1. 打开并登录 [Steam 商店首页 (store.steampowered.com)](https://store.steampowered.com/)；
-2. 按 `F12` 打开浏览器控制台（Console），粘贴以下代码并回车：
-   ```javascript
-   console.log(JSON.parse(document.getElementById("application_config").getAttribute("data-loyalty_webapi_token")));
-   ```
-3. 复制输出的字符串即可。
+页面会直接以 JSON 格式输出：
+```json
+{
+  "success": 1,
+  "data": {
+    "webapi_token": "eyJhbGciOiJ..."
+  }
+}
+```
+**直接复制 `"webapi_token"` 冒号后面的那串以 `ey` 开头的长字符串** 即可！无需按 F12，无需输入任何代码。
 
 ---
 

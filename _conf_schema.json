@@ -2,13 +2,13 @@
   "access_token": {
     "description": "Steam 网页端 Access Token",
     "type": "string",
-    "hint": "【快捷获取】先登录 https://store.steampowered.com ，按 F12 并在控制台执行：JSON.parse(document.getElementById('application_config').getAttribute('data-loyalty_webapi_token'))",
+    "hint": "【极速直达】登录 Steam 后直接点击打开链接：https://store.steampowered.com/pointssummary/ajaxgetasyncconfig ，复制页面中 webapi_token 冒号后面的那串长字符串即可",
     "default": ""
   },
   "steam_id": {
-    "description": "绑定的 64 位 SteamID (17位数字)",
+    "description": "绑定的 64 位 SteamID (17位纯数字)",
     "type": "string",
-    "hint": "【直达链接】打开 https://store.steampowered.com/account/ 页面顶部直接显示你的 17 位 Steam ID (例如 76561198xxxxxxxx)",
+    "hint": "【直达链接】打开 https://store.steampowered.com/account/ 页面最上方直接显示你的 17 位 Steam ID (例如 76561198xxxxxxxx)",
     "default": ""
   },
   "family_group_id": {
