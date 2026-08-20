@@ -3,7 +3,11 @@ from pydantic import BaseModel, Field
 class PluginConfig(BaseModel):
     access_token: str = Field(
         default="",
-        description="Steam 网页端 Access Token（通过 F12 控制台获取）"
+        description="Steam 网页端 Access Token（通过直达链接获取）"
+    )
+    cookie: str = Field(
+        default="",
+        description="Steam 网页端 Cookie (或 steamLoginSecure)，填入后可全自动无感刷新 Token 永久保活"
     )
     steam_id: str = Field(
         default="",

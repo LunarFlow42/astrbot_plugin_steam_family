@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch, MagicMock
 from core.steam_api import SteamFamilyClient, SharedApp, AppDetails
 from tests.mock_data import MOCK_FAMILY_APPS_RESPONSE, MOCK_APP_DETAILS_RESPONSE
 
@@ -27,3 +28,18 @@ async def test_filter_non_games():
     apps = client.parse_shared_apps(raw_data, filter_non_games=True)
     assert len(apps) == 1
     assert apps[0].appid == 100
+
+@pytest.mark.asyncio
+async def test_refresh_token_via_cookie():
+    client = SteamFamilyClient()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "success": 1,
+        "data": {
+            "webapi_token": "refreshed_jwt_token_123"
+        }
+    }
+    with patch.object(client._client, "get", return_value=mock_resp):
+        token = await client.refresh_token_via_cookie("mock_steamLoginSecure_value")
+        assert token == "refreshed_jwt_token_123"

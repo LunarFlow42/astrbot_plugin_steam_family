@@ -51,6 +51,13 @@ class SteamFamilyPlugin(Star):
         try:
             await self.storage.init_db()
 
+            # Auto-acquire token if cookie is configured
+            if not self.config.access_token and self.config.cookie:
+                new_token = await self.client.refresh_token_via_cookie(self.config.cookie)
+                if new_token:
+                    self.config.access_token = new_token
+                    logger.info("Automatically initialized Steam Access Token from Cookie.")
+
             # Start Web Dashboard Server if enabled
             if self.config.enable_dashboard_server:
                 self.web_server = DashboardWebServer(
@@ -68,6 +75,12 @@ class SteamFamilyPlugin(Star):
             logger.error(f"Error during plugin startup: {e}")
 
     async def _check_and_notify(self) -> str:
+        # Check token or attempt auto-refresh
+        if not self.config.access_token and self.config.cookie:
+            new_token = await self.client.refresh_token_via_cookie(self.config.cookie)
+            if new_token:
+                self.config.access_token = new_token
+
         if not self.config.access_token or not self.config.steam_id:
             return "未配置 Steam Access Token 或 SteamID，请在 WebUI 设置或使用 /steam_bind 配置。"
 
@@ -79,9 +92,25 @@ class SteamFamilyPlugin(Star):
                     return "无法获取家庭组 ID，请检查 SteamID 或 Token 是否具备家庭组访问权限。"
                 self.config.family_group_id = group_id
 
-            current_apps = await self.client.get_shared_library(
-                group_id, self.config.access_token, filter_non_games=self.config.filter_non_games
-            )
+            try:
+                current_apps = await self.client.get_shared_library(
+                    group_id, self.config.access_token, filter_non_games=self.config.filter_non_games
+                )
+            except SteamAuthExpiredError:
+                # If cookie is present, attempt silent auto-refresh once
+                if self.config.cookie:
+                    logger.info("Access token expired, attempting silent refresh via Cookie...")
+                    new_token = await self.client.refresh_token_via_cookie(self.config.cookie)
+                    if new_token:
+                        self.config.access_token = new_token
+                        current_apps = await self.client.get_shared_library(
+                            group_id, self.config.access_token, filter_non_games=self.config.filter_non_games
+                        )
+                    else:
+                        raise
+                else:
+                    raise
+
             prev_snapshot = await self.storage.get_latest_snapshot()
             diff = self.diff_engine.compute_diff(current_apps, prev_snapshot)
 
@@ -134,7 +163,7 @@ class SteamFamilyPlugin(Star):
 
             return f"家庭库变动检查完成：发现 {len(diff.added_apps)} 款新入库游戏，{len(diff.removed_apps)} 款移出。"
         except SteamAuthExpiredError:
-            return "⚠️ Steam Access Token 已失效，请重新获取并绑定！"
+            return "⚠️ Steam Access Token 已失效，请重新获取或填入 Cookie 开启全自动永久保活！"
         except SteamRateLimitError:
             return "⚠️ 请求过于频繁触发 Steam 限流 (429)，请稍后重试。"
         except Exception as e:
@@ -146,7 +175,7 @@ class SteamFamilyPlugin(Star):
             try:
                 interval_secs = max(60, self.config.poll_interval_minutes * 60)
                 await asyncio.sleep(interval_secs)
-                if self.config.access_token and self.config.steam_id:
+                if (self.config.access_token or self.config.cookie) and self.config.steam_id:
                     await self._check_and_notify()
             except asyncio.CancelledError:
                 break

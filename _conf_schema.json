@@ -2,7 +2,13 @@
   "access_token": {
     "description": "Steam 网页端 Access Token",
     "type": "string",
-    "hint": "【极速直达】登录 Steam 后直接点击打开链接：https://store.steampowered.com/pointssummary/ajaxgetasyncconfig ，复制页面中 webapi_token 冒号后面的那串长字符串即可",
+    "hint": "【方式1·快捷填写】点击打开链接：https://store.steampowered.com/pointssummary/ajaxgetasyncconfig ，复制 webapi_token 冒号后面的那串字符串",
+    "default": ""
+  },
+  "cookie": {
+    "description": "Steam Cookie (全自动永久保活可选)",
+    "type": "string",
+    "hint": "【方式2·永久免维护】填入 steamLoginSecure 或完整 Cookie，插件将在 Token 过期时全自动静默刷新，永久保活！",
     "default": ""
   },
   "steam_id": {
