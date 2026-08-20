@@ -1,0 +1,56 @@
+{
+  "access_token": {
+    "description": "Steam 网页端 Access Token",
+    "type": "string",
+    "hint": "在 store.steampowered.com 控制台执行 JSON.parse(document.getElementById('application_config').getAttribute('data-loyalty_webapi_token')) 获取",
+    "default": ""
+  },
+  "steam_id": {
+    "description": "绑定的 64 位 SteamID",
+    "type": "string",
+    "hint": "你的 17 位 Steam 64位数字 ID，例如 76561198xxxxxxxx",
+    "default": ""
+  },
+  "family_group_id": {
+    "description": "Steam 家庭组 ID",
+    "type": "string",
+    "hint": "留空时将根据 SteamID 和 Token 自动探测家庭组",
+    "default": ""
+  },
+  "poll_interval_minutes": {
+    "description": "后台自动轮询间隔 (分钟)",
+    "type": "int",
+    "hint": "建议设为 15-60 分钟，避免频繁请求触发 429 限流",
+    "default": 15
+  },
+  "proxy": {
+    "description": "网络代理地址",
+    "type": "string",
+    "hint": "如 http://127.0.0.1:7890，若 Steam API 访问受阻可配置",
+    "default": ""
+  },
+  "request_timeout": {
+    "description": "请求超时时间 (秒)",
+    "type": "int",
+    "hint": "默认 20 秒",
+    "default": 20
+  },
+  "enable_render_card": {
+    "description": "启用精美 HTML 游戏卡片图片渲染",
+    "type": "bool",
+    "hint": "开启后新游戏变动将调用 Playwright 渲染高质量卡片，关闭则发送文字",
+    "default": true
+  },
+  "filter_non_games": {
+    "description": "自动过滤工具/DLC/Demo等非游戏应用",
+    "type": "bool",
+    "hint": "开启后自动剔除 Dedicated Server、Soundtrack 等非正式游戏",
+    "default": true
+  },
+  "subscribers": {
+    "description": "已订阅变动推送的目标会话 UMO 列表",
+    "type": "list",
+    "hint": "可通过在群内发送 /steam_sub 自动添加当前会话",
+    "default": []
+  }
+}
