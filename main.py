@@ -47,9 +47,23 @@ class SteamFamilyPlugin(Star):
         # Start async initialization
         asyncio.create_task(self._init_and_start_polling())
 
+    def _refresh_config(self):
+        """Dynamically reload config from context if updated via WebUI."""
+        if hasattr(self.context, "get_config"):
+            try:
+                raw = self.context.get_config()
+                if isinstance(raw, dict) and raw:
+                    self.config = PluginConfig(**raw)
+                    # Recreate HTTP client if proxy or timeout changed
+                    if self.client.proxy != self.config.proxy or self.client.timeout != self.config.request_timeout:
+                        self.client = SteamFamilyClient(proxy=self.config.proxy, timeout=self.config.request_timeout)
+            except Exception as e:
+                logger.warning(f"Failed to refresh config from context: {e}")
+
     async def _init_and_start_polling(self):
         try:
             await self.storage.init_db()
+            self._refresh_config()
 
             # Auto-acquire token if cookie is configured
             if not self.config.access_token and self.config.cookie:
@@ -90,31 +104,41 @@ class SteamFamilyPlugin(Star):
                 logger.debug(f"Detail warmup skipped for app {app.appid}: {e}")
 
     async def _check_and_notify(self) -> str:
-        # Check token or attempt auto-refresh
+        self._refresh_config()
+        logger.info(f"Checking Steam Family. Token present: {bool(self.config.access_token)}, Cookie present: {bool(self.config.cookie)}, SteamID: {self.config.steam_id}")
+
+        if not self.config.access_token and not self.config.cookie:
+            return "⚠️ 未检测到有效配置：未填写 Steam Access Token 或 Cookie，请在 WebUI 设置或使用 /steam_bind 绑定。"
+        
+        if not self.config.steam_id:
+            return "⚠️ 未检测到配置：未填写 17 位 SteamID，请在 WebUI 中填入你的 Steam 64 位 ID。"
+
+        # Attempt auto-refresh token if cookie is set
         if not self.config.access_token and self.config.cookie:
             new_token = await self.client.refresh_token_via_cookie(self.config.cookie)
             if new_token:
                 self.config.access_token = new_token
-
-        if not self.config.access_token or not self.config.steam_id:
-            return "未配置 Steam Access Token 或 SteamID，请在 WebUI 设置或使用 /steam_bind 配置。"
+            else:
+                return "⚠️ 尝试通过 Cookie 获取 Access Token 失败，请检查 Cookie 有效性或直接在 WebUI 中填入 Access Token。"
 
         try:
             group_id = self.config.family_group_id
             if not group_id:
+                logger.info(f"Fetching family group id for SteamID {self.config.steam_id}...")
                 group_id = await self.client.get_family_group_id(self.config.access_token, self.config.steam_id)
                 if not group_id:
-                    return "无法获取家庭组 ID，请检查 SteamID 或 Token 是否具备家庭组访问权限。"
+                    return f"⚠️ 无法获取家庭组 ID。该账号 ({self.config.steam_id}) 可能未加入任何 Steam 家庭组，或 Token 权限不足。"
                 self.config.family_group_id = group_id
+                logger.info(f"Detected family group id: {group_id}")
 
+            logger.info(f"Fetching shared library apps for group {group_id}...")
             try:
                 current_apps = await self.client.get_shared_library(
                     group_id, self.config.access_token, filter_non_games=self.config.filter_non_games
                 )
             except SteamAuthExpiredError:
-                # If cookie is present, attempt silent auto-refresh once
                 if self.config.cookie:
-                    logger.info("Access token expired, attempting silent refresh via Cookie...")
+                    logger.info("Token expired, attempting auto-refresh via cookie...")
                     new_token = await self.client.refresh_token_via_cookie(self.config.cookie)
                     if new_token:
                         self.config.access_token = new_token
@@ -122,9 +146,12 @@ class SteamFamilyPlugin(Star):
                             group_id, self.config.access_token, filter_non_games=self.config.filter_non_games
                         )
                     else:
-                        raise
+                        return "⚠️ Steam Access Token 已失效且 Cookie 刷新失败，请重新获取 Token！"
                 else:
-                    raise
+                    return "⚠️ Steam Access Token 已失效，请在 WebUI 中重新填入最新 Token！"
+
+            if not current_apps:
+                return f"⚠️ 成功连接到 Steam 家庭组 (ID: {group_id})，但获取到的共享游戏列表为空（可能家庭组内无共享游戏或被 Steam 过滤）。"
 
             prev_snapshot = await self.storage.get_latest_snapshot()
             diff = self.diff_engine.compute_diff(current_apps, prev_snapshot)
@@ -133,13 +160,12 @@ class SteamFamilyPlugin(Star):
             await self.storage.save_snapshot(current_apps)
 
             if diff.is_first_run:
-                # Background cache details for top games
                 asyncio.create_task(self._warmup_app_details(current_apps))
                 logger.info(f"Steam Family initial baseline saved with {len(current_apps)} games.")
-                return f"家庭库基线数据已建立，共同步 {len(current_apps)} 款游戏！资产大盘与义父榜已实时更新。"
+                return f"🎉 首次同步成功！已成功建立家庭库基线数据，共同步【{len(current_apps)}】款游戏！\n📊 资产大盘已实时生成，请访问 Web 看板查看。"
 
             if not diff.has_changes:
-                return "家庭库检查完成：暂无游戏变动。"
+                return f"✅ 家庭库检查完成：当前库内共有 {len(current_apps)} 款游戏，暂无新游戏变动。"
 
             # Process added games and broadcast
             subscribers = await self.storage.get_subscribers()
@@ -184,8 +210,8 @@ class SteamFamilyPlugin(Star):
         except SteamRateLimitError:
             return "⚠️ 请求过于频繁触发 Steam 限流 (429)，请稍后重试。"
         except Exception as e:
-            logger.error(f"Error during steam family check: {e}")
-            return f"检查家庭库变动时发生错误: {e}"
+            logger.error(f"Error during steam family check: {e}", exc_info=True)
+            return f"❌ 检查家庭库失败: {type(e).__name__} ({e})。若在中国大陆服务器运行，请检查网络是否能直连 Steam API 或在 WebUI 配置代理 (proxy)。"
 
     async def _polling_loop(self):
         while True:
@@ -211,7 +237,7 @@ class SteamFamilyPlugin(Star):
     @filter.command("steam_check")
     async def cmd_check(self, event: AstrMessageEvent):
         """手动触发一次家庭库变动检查与同步。"""
-        yield event.plain_result("⏳ 正在查询 Steam 家庭库数据，请稍候...")
+        yield event.plain_result("⏳ 正在向 Steam 请求家庭库数据，请稍候...")
         result = await self._check_and_notify()
         yield event.plain_result(result)
 
