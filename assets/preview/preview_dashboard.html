@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Steam 家庭资产全景看板 - AstrBot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif; }
+    body { background: #0c1017; color: #c7d5e0; padding: 32px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 28px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 16px; }
+    .header h1 { font-size: 28px; color: #fff; display: flex; align-items: center; gap: 12px; }
+    .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 32px; }
+    .stat-card { background: linear-gradient(135deg, #17202d 0%, #101620 100%); border: 1px solid rgba(102,192,244,0.15); border-radius: 12px; padding: 20px; }
+    .stat-title { font-size: 13px; color: #8f98a0; margin-bottom: 8px; text-transform: uppercase; }
+    .stat-value { font-size: 28px; font-weight: 800; color: #66c0f4; }
+    .stat-value.highlight { color: #a4d007; }
+    .section-title { font-size: 20px; color: #fff; margin: 24px 0 16px 0; }
+    .ranking-table { width: 100%; border-collapse: collapse; background: #141c28; border-radius: 10px; overflow: hidden; margin-bottom: 32px; }
+    .ranking-table th, .ranking-table td { padding: 14px 18px; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .ranking-table th { background: #1a2434; color: #8f98a0; font-size: 13px; }
+    .game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 18px; }
+    .game-card { background: #151d29; border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); transition: transform 0.2s; }
+    .game-card:hover { transform: translateY(-4px); }
+    .game-card img { width: 100%; height: 130px; object-fit: cover; }
+    .game-card-info { padding: 14px; }
+    .game-card-title { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .game-card-meta { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #a4d007; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎮 Steam 家庭资产全景看板</h1>
+      <span style="font-size: 13px; color: #8f98a0;">Powered by AstrBot</span>
+    </div>
+
+    <div class="stat-cards">
+      <div class="stat-card">
+        <div class="stat-title">家庭库总游戏数</div>
+        <div class="stat-value">3 款</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-title">总资产估值 (原价)</div>
+        <div class="stat-value highlight">¥ 566.0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-title">折后当前估值</div>
+        <div class="stat-value">¥ 566.0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-title">家庭组总成员数</div>
+        <div class="stat-value">2 位</div>
+      </div>
+    </div>
+
+    <div class="section-title">👑 家庭义父贡献排行榜</div>
+    <table class="ranking-table">
+      <thead>
+        <tr>
+          <th>排名</th>
+          <th>成员 SteamID</th>
+          <th>贡献游戏数</th>
+          <th>资产总原值 (¥)</th>
+          <th>资产折后估值 (¥)</th>
+        </tr>
+      </thead>
+      <tbody>
+        
+        <tr>
+          <td>#1</td>
+          <td>76561198000000001</td>
+          <td><b>3</b> 款</td>
+          <td style="color: #a4d007; font-weight: 700;">¥ 566.0</td>
+          <td>¥ 566.0</td>
+        </tr>
+        
+        <tr>
+          <td>#2</td>
+          <td>76561198000000002</td>
+          <td><b>1</b> 款</td>
+          <td style="color: #a4d007; font-weight: 700;">¥ 0</td>
+          <td>¥ 0</td>
+        </tr>
+        
+      </tbody>
+    </table>
+
+    <div class="section-title">✨ 最近入库游戏预览</div>
+    <div class="game-grid">
+      
+      <div class="game-card">
+        <img src="https://cdn.akamai.steamstatic.com/steam/apps/1086940/header.jpg" alt="Cover">
+        <div class="game-card-info">
+          <div class="game-card-title">博德之门3</div>
+          <div class="game-card-meta">
+            <span>¥ 298.0</span>
+            <span style="color: #66c0f4; font-size: 12px;">好评率: 96%</span>
+          </div>
+        </div>
+      </div>
+      
+      <div class="game-card">
+        <img src="https://cdn.akamai.steamstatic.com/steam/apps/2358720/header.jpg" alt="Cover">
+        <div class="game-card-info">
+          <div class="game-card-title">黑神话：悟空</div>
+          <div class="game-card-meta">
+            <span>¥ 268.0</span>
+            <span style="color: #66c0f4; font-size: 12px;">好评率: 96%</span>
+          </div>
+        </div>
+      </div>
+      
+    </div>
+  </div>
+</body>
+</html>
