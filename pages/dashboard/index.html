@@ -123,10 +123,10 @@
     </div>
 
     <!-- Recent Games Preview -->
-    <div class="section-title">✨ 家庭库游戏封面预览</div>
+    <div class="section-title">✨ 最近入库游戏封面 (Recent Additions)</div>
     <div class="game-grid" id="gameGrid">
       <div style="grid-column: 1 / -1; text-align: center; color: #8f98a0; padding: 24px; background: #141c28; border-radius: 8px;">
-        正在加载游戏封面...
+        正在加载最新游戏封面...
       </div>
     </div>
 
@@ -136,7 +136,7 @@
         <div>
           <div class="dev-title">🛠️ 本地数据库与测试管理中心 (Test & Debug Studio)</div>
           <div style="font-size: 12px; color: #8f98a0; margin-top: 4px;">
-            可在此直观查看当前快照库，或手动移出某款游戏以测试「下次同步时触发新入库卡片推送」功能。
+            按<b>最新入库时间优先排序</b>。可在此查看完整快照库，或手动移出某款游戏以测试「下次同步时触发新入库卡片推送」功能。
           </div>
         </div>
         <div style="display: flex; gap: 10px; align-items: center;">
@@ -154,7 +154,7 @@
               <th style="width: 80px;">AppID</th>
               <th>游戏名称</th>
               <th>归属成员 (SteamID)</th>
-              <th>当前价格</th>
+              <th>价格状态</th>
               <th style="text-align: center; width: 130px;">操作</th>
             </tr>
           </thead>
@@ -193,7 +193,7 @@
 
     // AstrBot Plugin Pages Standard Requester
     async function apiRequest(endpoint, method = "GET", payload = {}) {
-      const cleanEndpoint = endpoint.replace(/^\/+/, ""); // e.g. "data", "sync", "db/remove_app"
+      const cleanEndpoint = endpoint.replace(/^\/+/, "");
       const bridge = await getBridge();
 
       if (bridge) {
@@ -257,9 +257,25 @@
           ? raw.data
           : raw;
 
-        document.getElementById("valTotalGames").innerHTML = `${data.total_games || 0} <span style="font-size: 14px; font-weight: normal; color: #8f98a0;">款</span>`;
-        document.getElementById("valTotalInitial").innerText = `¥ ${data.total_initial_value || 0}`;
-        document.getElementById("valTotalCurrent").innerText = `¥ ${data.total_current_value || 0}`;
+        const totalGames = data.total_games || 0;
+        const cachedCount = data.cached_games_count !== undefined ? data.cached_games_count : totalGames;
+
+        let gameSubtitle = `${totalGames} <span style="font-size: 13px; font-weight: normal; color: #8f98a0;">款`;
+        if (cachedCount < totalGames && totalGames > 0) {
+          gameSubtitle += ` (已估值 ${cachedCount}/${totalGames} 款)`;
+        } else {
+          gameSubtitle += `</span>`;
+        }
+        document.getElementById("valTotalGames").innerHTML = gameSubtitle;
+
+        let initValText = `¥ ${data.total_initial_value || 0}`;
+        let currValText = `¥ ${data.total_current_value || 0}`;
+        if (cachedCount < totalGames && totalGames > 0) {
+          initValText += ` <span style="font-size: 11px; font-weight: normal; color: #ffaa00;">(后台估值中)</span>`;
+          currValText += ` <span style="font-size: 11px; font-weight: normal; color: #ffaa00;">(后台估值中)</span>`;
+        }
+        document.getElementById("valTotalInitial").innerHTML = initValText;
+        document.getElementById("valTotalCurrent").innerHTML = currValText;
         document.getElementById("valMemberCount").innerHTML = `${data.member_count || 0} <span style="font-size: 14px; font-weight: normal; color: #8f98a0;">位</span>`;
 
         // Render Rankings
@@ -278,21 +294,26 @@
           rankBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #8f98a0; padding: 20px;">暂无排行数据，点击上方「立即手动同步检查」拉取数据</td></tr>`;
         }
 
-        // Render Recent Games Grid
+        // Render Recent Games Grid (newest first)
         const grid = document.getElementById("gameGrid");
         if (data.recent_games && data.recent_games.length > 0) {
-          grid.innerHTML = data.recent_games.map(g => `
-            <div class="game-card">
-              <img src="${g.header_image}" alt="Cover" onerror="this.src='https://cdn.akamai.steamstatic.com/steam/apps/${g.appid}/header.jpg'">
-              <div class="game-card-info">
-                <div class="game-card-title" title="${g.name}">${g.name}</div>
-                <div class="game-card-meta">
-                  <span>¥ ${g.final_price}</span>
-                  <span style="color: #66c0f4; font-size: 11px;">好评率: ${g.positive_rate}%</span>
+          grid.innerHTML = data.recent_games.map(g => {
+            const priceLabel = g.final_price > 0 
+              ? `¥ ${g.final_price}` 
+              : (g.is_cached ? '免费 / 已入库' : '<span style="color:#ffaa00;">⏳ 估值中...</span>');
+            return `
+              <div class="game-card">
+                <img src="${g.header_image}" alt="Cover" onerror="this.src='https://cdn.akamai.steamstatic.com/steam/apps/${g.appid}/header.jpg'">
+                <div class="game-card-info">
+                  <div class="game-card-title" title="${g.name}">${g.name}</div>
+                  <div class="game-card-meta">
+                    <span>${priceLabel}</span>
+                    <span style="color: #66c0f4; font-size: 11px;">好评率: ${g.positive_rate}%</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          `).join("");
+            `;
+          }).join("");
         } else {
           grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: #8f98a0; padding: 24px; background: #141c28; border-radius: 8px;">暂无游戏封面数据。点击上方「立即手动同步检查」开始同步！</div>`;
         }
@@ -308,19 +329,27 @@
     function renderDbTable(apps) {
       const dbBody = document.getElementById("dbTableBody");
       if (apps && apps.length > 0) {
-        dbBody.innerHTML = apps.map(app => `
-          <tr id="row-${app.appid}">
-            <td><code>${app.appid}</code></td>
-            <td><b>${app.name}</b> ${app.original_name && app.original_name !== app.name ? `<span style="color: #8f98a0; font-size: 11px;">(${app.original_name})</span>` : ''}</td>
-            <td><span style="color: #8f98a0; font-size: 12px;">${app.owners}</span></td>
-            <td style="color: #a4d007;">¥ ${app.final_price}</td>
-            <td style="text-align: center;">
-              <button class="btn btn-danger" onclick="removeApp(${app.appid}, '${app.name.replace(/'/g, "\\'")}')">
-                🗑️ 移出游戏
-              </button>
-            </td>
-          </tr>
-        `).join("");
+        dbBody.innerHTML = apps.map(app => {
+          let priceDisplay = `<span style="color: #a4d007; font-weight: 700;">¥ ${app.final_price}</span>`;
+          if (app.final_price === 0) {
+            priceDisplay = app.is_cached 
+              ? `<span style="color: #8f98a0;">免费/已下架 (¥ 0)</span>` 
+              : `<span style="color: #ffaa00; font-size: 12px;">⏳ 后台估值中...</span>`;
+          }
+          return `
+            <tr id="row-${app.appid}">
+              <td><code>${app.appid}</code></td>
+              <td><b>${app.name}</b> ${app.original_name && app.original_name !== app.name ? `<span style="color: #8f98a0; font-size: 11px;">(${app.original_name})</span>` : ''}</td>
+              <td><span style="color: #8f98a0; font-size: 12px;">${app.owners}</span></td>
+              <td>${priceDisplay}</td>
+              <td style="text-align: center;">
+                <button class="btn btn-danger" onclick="removeApp(${app.appid}, '${app.name.replace(/'/g, "\\'")}')">
+                  🗑️ 移出游戏
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join("");
       } else {
         dbBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #8f98a0; padding: 20px;">暂无快照数据</td></tr>`;
       }
@@ -329,7 +358,7 @@
     async function triggerSync() {
       const btn = document.getElementById("btnSync");
       btn.disabled = true;
-      btn.innerHTML = "⏳ 正在同步中...";
+      btn.innerHTML = "⏳ 正在同步并加速估值中...";
       try {
         const data = await apiRequest("sync", "POST");
         showToast((data && data.message) || "同步完成！", data && data.success !== false);

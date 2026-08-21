@@ -307,7 +307,12 @@ class FamilyStorage:
 
         all_snapshot_apps = []
         if snapshot:
-            for app in snapshot.values():
+            sorted_apps = sorted(
+                snapshot.values(),
+                key=lambda a: (getattr(a, "rt_time_acquired", 0), a.appid),
+                reverse=True,
+            )
+            for app in sorted_apps:
                 detail = cached_map.get(app.appid)
                 all_snapshot_apps.append(
                     {
@@ -320,16 +325,21 @@ class FamilyStorage:
                         "owners": ", ".join(app.owner_steamids)
                         if app.owner_steamids
                         else "家庭成员",
+                        "initial_price": detail.initial_price if detail else 0.0,
                         "final_price": detail.final_price if detail else 0.0,
+                        "is_cached": detail is not None,
                         "positive_rate": detail.positive_rate if detail else 95,
                         "genres": detail.genres if detail else ["Steam 共享"],
+                        "rt_time_acquired": getattr(app, "rt_time_acquired", 0),
                     }
                 )
 
         recent_games = all_snapshot_apps[:12]
+        cached_count = len([a for a in all_snapshot_apps if a.get("is_cached")])
 
         return {
             "total_games": len(snapshot) if snapshot else 0,
+            "cached_games_count": cached_count,
             "total_initial_value": round(total_initial, 2),
             "total_current_value": round(total_final, 2),
             "member_count": len(rankings),

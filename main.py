@@ -357,15 +357,41 @@ class SteamFamilyPlugin(Star):
             logger.error(f"Error during plugin startup: {e}")
 
     async def _warmup_app_details(self, apps: list):
-        """Asynchronously warm up cache for apps in the background."""
-        for app in apps[:30]:
-            try:
-                details = await self.client.get_app_details(app.appid)
-                if details:
-                    await self.storage.cache_app_details(details)
-                await asyncio.sleep(0.3)
-            except Exception as e:
-                logger.debug(f"Detail warmup skipped for app {app.appid}: {e}")
+        """Asynchronously and progressively warm up cache for uncached apps in the background."""
+        try:
+            cached_apps = await self.storage.get_all_cached_apps()
+            cached_ids = {a.appid for a in cached_apps}
+            uncached = [a for a in apps if a.appid not in cached_ids]
+            if not uncached:
+                return
+
+            # Prioritize newest / most recently acquired games first
+            uncached.sort(
+                key=lambda a: (getattr(a, "rt_time_acquired", 0), a.appid),
+                reverse=True,
+            )
+            logger.info(f"Starting background price warmup for {len(uncached)} uncached games...")
+
+            sem = asyncio.Semaphore(5)
+
+            async def fetch_one(app):
+                async with sem:
+                    try:
+                        details = await self.client.get_app_details(app.appid)
+                        if details:
+                            await self.storage.cache_app_details(details)
+                        await asyncio.sleep(0.12)
+                    except Exception as e:
+                        logger.debug(f"Detail warmup skipped for app {app.appid}: {e}")
+
+            # Process in chunks of 15
+            for i in range(0, len(uncached), 15):
+                chunk = uncached[i : i + 15]
+                await asyncio.gather(*(fetch_one(app) for app in chunk))
+                await asyncio.sleep(0.25)
+            logger.info("Background price warmup completed.")
+        except Exception as ex:
+            logger.warning(f"Error in background warmup task: {ex}")
 
     async def _render_card_image(self, card_data: dict) -> str | None:
         """利用 AstrBot 原生 self.html_render 渲染高质量游戏卡片。"""
@@ -451,10 +477,12 @@ class SteamFamilyPlugin(Star):
             # Persist latest snapshot
             await self.storage.save_snapshot(current_apps)
 
+            # Warm up price details for uncached apps in background
+            asyncio.create_task(self._warmup_app_details(current_apps))
+
             if diff.is_first_run:
-                asyncio.create_task(self._warmup_app_details(current_apps))
                 logger.info(f"Steam Family initial baseline saved with {len(current_apps)} games.")
-                return f"🎉 首次同步成功！已成功建立家庭库基线数据，共同步【{len(current_apps)}】款游戏！\n📊 资产大盘已实时生成，可在 WebUI 点击插件卡片图标查看。"
+                return f"🎉 首次同步成功！已成功建立家庭库基线数据，共同步【{len(current_apps)}】款游戏！\n📊 资产大盘已实时生成，正在后台持续自动估值中，可在 WebUI 查看最新全景大盘。"
 
             if not diff.has_changes:
                 return (

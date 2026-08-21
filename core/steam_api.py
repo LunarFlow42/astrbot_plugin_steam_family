@@ -28,6 +28,7 @@ class SharedApp(BaseModel):
     owner_steamids: list[str] = Field(default_factory=list)
     exclude_reason: int = 0
     app_type: int = 1
+    rt_time_acquired: int = 0
 
 
 class AppDetails(BaseModel):
@@ -163,6 +164,7 @@ class SteamFamilyClient:
                 if any(kw in lower_name for kw in non_game_keywords):
                     continue
 
+            rt_time_acquired = item.get("rt_time_acquired", 0)
             shared_apps.append(
                 SharedApp(
                     appid=appid,
@@ -170,6 +172,7 @@ class SteamFamilyClient:
                     owner_steamids=owner_steamids,
                     exclude_reason=exclude_reason,
                     app_type=app_type,
+                    rt_time_acquired=rt_time_acquired,
                 )
             )
         return shared_apps
