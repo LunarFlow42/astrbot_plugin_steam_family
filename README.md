@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>基于 AstrBot 框架的现代化 Steam 家庭库资产监控与智能管家插件</b><br>
-  ⚡ 自动增量监控 | 🎨 赛博卡片推送 | 👑 义父资产排行 | 🎲 赛博轮盘 | 🚀 车队雷达 | 🌐 独立 Web 大盘 | 🤖 LLM 自然语言找游戏
+  ⚡ 自动增量监控 | 🎨 赛博卡片推送 | 👑 义父资产排行 | 🎲 赛博轮盘 | 🚀 车队雷达 | 🖥️ 原生内置 WebUI | 🤖 LLM 自然语言找游戏
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
 - 👑 **家庭“义父榜”资产大盘**：多维统计成员游戏数、原价总额与折后现值，一键生成谁是赛博慈善家、谁是白嫖理财大师。
 - 🎲 **今天玩什么（赛博轮盘）**：支持按类型标签、好评率从全库随机抽选游戏并给出推荐理由，治愈群友选择困难症。
 - 🚀 **开黑车队雷达**：一键计算指定多位开黑成员共同拥有的多人合作游戏交集，聚会开黑不撞车。
-- 📊 **Web 全景大盘与远程访问**：内置 Web 看板服务与 `_conf_schema.json`，支持一键切换 `0.0.0.0` 远程/局域网浏览器访问，直观查看全量家庭资产。
+- 🖥️ **AstrBot 原生内置 WebUI（Plugin Pages）**：无需额外手动开启或放行任何端口！直接在 AstrBot 管理面板点击插件卡片上的 **「🖥️ 打开插件UI界面」** 图标，即可一键呼出全景大盘与可视化数据库测试中心。
 - 🤖 **原生 AI Agent 工具调用（LLM Function Calling）**：支持群友使用自然语言与机器人聊天找游戏（*“帮我找个 50 块以下画风治愈的解谜游戏”*）。
 - 🛡️ **双模鉴权与自动永久保活**：支持直达链接获取 Token，亦可填入 Cookie 由插件在后台自动静默刷新 Token，永久免维护。
 
@@ -82,8 +82,6 @@ git clone https://github.com/LunarFlow42/astrbot_plugin_steam_family.git data/pl
 - **`access_token`**：粘贴上述获取到的 `webapi_token` 字符串。
 - **`steam_id`**：填写你的 17 位 Steam 64 位数字 ID。
 - **`cookie`**（可选·永久保活）：若填入 Steam 网页端 `steamLoginSecure` Cookie，插件将在 Token 过期时全自动静默刷新，永久保活免维护！
-- **`dashboard_host`**：默认 `0.0.0.0`（支持远程/局域网访问）或 `127.0.0.1`（仅本机）。
-- **`dashboard_port`**：默认 `6188`。
 - **`proxy`**：若服务器位于中国大陆无法直连 Steam API，可配置代理地址（如 `http://127.0.0.1:7890`）。
 
 ### 方式 B：聊天指令快捷配置
@@ -93,6 +91,19 @@ git clone https://github.com/LunarFlow42/astrbot_plugin_steam_family.git data/pl
 /steam_sub
 /steam_check
 ```
+
+---
+
+## 🖥️ WebUI 内置全景大盘与测试中心 (Plugin Pages)
+
+进入 AstrBot Web 管理控制台的「插件管理」页面：
+1. 找到 **`Steam 家庭资产管家`** 插件卡片；
+2. 点击卡片上的 **「🖥️ 打开插件UI界面」** 图标按钮；
+3. 即可在 AstrBot 控制台内部直接打开内置大盘：
+   - ⚡ **一键手动同步检查**：网页端实时触发数据拉取；
+   - 👑 **义父资产贡献榜**：多维度排名与贡献估值；
+   - ✨ **家庭库游戏封面预览**：精美海报与好评率一览；
+   - 🛠️ **本地数据库调试中心**：支持可视化搜索快照，**一键移出某款游戏以快速测试新游戏入库推送**！
 
 ---
 
@@ -106,7 +117,7 @@ git clone https://github.com/LunarFlow42/astrbot_plugin_steam_family.git data/pl
 | `/steam_rank` | 查看家庭组“义父”资产贡献排行榜 | `/steam rank`, `/义父榜`, `/steam排行` | `/steam rank` |
 | `/steam_roll [标签]` | 赛博轮盘：随机抽取家庭库内游戏 | `/steam roll`, `/今天玩什么`, `/steam抽奖` | `/steam roll RPG` |
 | `/steam_coop <SteamID...>` | 开黑车队雷达：计算多人共有联机游戏 | `/steam coop`, `/开黑雷达`, `/steam联机` | `/steam coop 76561198... 76561198...` |
-| `/steam_dashboard` | 获取 Web 资产全景看板直达访问链接 | `/steam dashboard`, `/steam大盘`, `/steam看板` | `/steam dashboard` |
+| `/steam_dashboard` | 查看 Web 看板开启与使用指引 | `/steam dashboard`, `/steam大盘`, `/steam看板` | `/steam dashboard` |
 | `/steam_bind <token> [steamid]` | 绑定/更新 Steam 鉴权凭据 | `/steam bind`, `/steam绑定` | `/steam_bind eyJhb... 76561198...` |
 | `/steam_help` | 查看插件指令与功能帮助 | `/steam help`, `/steam`, `/steam帮助` | `/steam help` |
 

@@ -80,7 +80,6 @@ try:
     from .core.renderer import CardRenderer
     from .core.steam_api import SteamAuthExpiredError, SteamFamilyClient, SteamRateLimitError
     from .core.storage import FamilyStorage
-    from .core.web_server import DashboardWebServer
 except (ImportError, ValueError):
     from agent.tools import SteamAgentTools
     from config import PluginConfig
@@ -88,7 +87,6 @@ except (ImportError, ValueError):
     from core.renderer import CardRenderer
     from core.steam_api import SteamAuthExpiredError, SteamFamilyClient, SteamRateLimitError
     from core.storage import FamilyStorage
-    from core.web_server import DashboardWebServer
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +121,6 @@ class SteamFamilyPlugin(Star):
         self.diff_engine = FamilyDiffEngine()
         self.renderer = CardRenderer()
         self.agent_tools = SteamAgentTools(self.storage)
-        self.web_server: DashboardWebServer | None = None
         self._polling_task: asyncio.Task | None = None
 
         # Register AstrBot Web APIs for embedded Plugin Pages
@@ -224,17 +221,6 @@ class SteamFamilyPlugin(Star):
                     self.config.access_token = new_token
                     logger.info("Automatically initialized Steam Access Token from Cookie.")
 
-            # Start Web Dashboard Server if enabled
-            if self.config.enable_dashboard_server:
-                self.web_server = DashboardWebServer(
-                    host=self.config.dashboard_host,
-                    port=self.config.dashboard_port,
-                    storage=self.storage,
-                    renderer=self.renderer,
-                    sync_callback=self._check_and_notify,
-                )
-                await self.web_server.start()
-
             # Execute immediate initial sync if credentials are configured
             if (self.config.access_token or self.config.cookie) and self.config.steam_id:
                 asyncio.create_task(self._check_and_notify())
@@ -323,7 +309,7 @@ class SteamFamilyPlugin(Star):
             if diff.is_first_run:
                 asyncio.create_task(self._warmup_app_details(current_apps))
                 logger.info(f"Steam Family initial baseline saved with {len(current_apps)} games.")
-                return f"🎉 首次同步成功！已成功建立家庭库基线数据，共同步【{len(current_apps)}】款游戏！\n📊 资产大盘已实时生成，请访问 Web 看板查看。"
+                return f"🎉 首次同步成功！已成功建立家庭库基线数据，共同步【{len(current_apps)}】款游戏！\n📊 资产大盘已实时生成，可在 WebUI 点击插件卡片图标查看。"
 
             if not diff.has_changes:
                 return (
@@ -364,7 +350,6 @@ class SteamFamilyPlugin(Star):
                 for target_id in subscribers:
                     try:
                         if card_bytes and hasattr(self.context, "send_message"):
-                            # Save temp image for robust message chain sending
                             with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
                                 tf.write(card_bytes)
                                 temp_path = tf.name
@@ -467,20 +452,10 @@ class SteamFamilyPlugin(Star):
         alias={"steam dashboard", "steam大盘", "steam看板"},
     )
     async def cmd_dashboard(self, event: AstrMessageEvent):
-        """获取 Steam 家庭资产全景 Web 看板访问地址。"""
-        if not self.config.enable_dashboard_server:
-            yield event.plain_result(
-                "Web 看板服务未开启，请在插件配置中开启 enable_dashboard_server。"
-            )
-            return
-        host_display = (
-            "127.0.0.1"
-            if self.config.dashboard_host in ("0.0.0.0", "")
-            else self.config.dashboard_host
-        )
-        url = f"http://{host_display}:{self.config.dashboard_port}"
+        """获取 Steam 家庭资产全景 Web 看板访问指引。"""
         yield event.plain_result(
-            f"📊 Steam 家庭资产全景 Web 看板地址：\n{url}\n(支持远程浏览器访问)"
+            "📊 Steam 家庭资产全景看板已原生集成至 AstrBot！\n"
+            "👉 请在 AstrBot Web 管理面板「插件管理」中找到本插件卡片，点击「🖥️ 打开插件UI界面」图标即可一键开启内置全景大盘！"
         )
 
     @filter.command("steam_help", alias={"steam help", "steam", "steam帮助"})
@@ -494,7 +469,7 @@ class SteamFamilyPlugin(Star):
             "• /steam_rank 或 /steam rank - 查看家庭组义父资产贡献榜\n"
             "• /steam_roll [标签] - 赛博轮盘随机抽取游戏\n"
             "• /steam_coop <SteamID...> - 开黑车队雷达 (计算共有游戏)\n"
-            "• /steam_dashboard - 获取实时 Web 全景看板链接\n"
+            "• /steam_dashboard - 查看 Web 看板开启指引\n"
             "• /steam_bind <Token> <SteamID> - 重新绑定鉴权凭据"
         )
         yield event.plain_result(help_msg)
@@ -520,7 +495,5 @@ class SteamFamilyPlugin(Star):
     async def terminate(self):
         if self._polling_task:
             self._polling_task.cancel()
-        if self.web_server:
-            await self.web_server.stop()
         await self.renderer.close()
         logger.info("Steam Family Plugin terminated.")
