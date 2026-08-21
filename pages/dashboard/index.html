@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Steam 家庭资产全景看板 - AstrBot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif; }
+    body { background: #0c1017; color: #c7d5e0; padding: 24px; }
+    .container { max-width: 1200px; margin: 0 auto; }
+    
+    /* Header */
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 16px; flex-wrap: wrap; gap: 14px; }
+    .header h1 { font-size: 24px; color: #fff; display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -0.5px; }
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+    
+    /* Buttons */
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s ease; text-decoration: none; }
+    .btn-primary { background: linear-gradient(135deg, #1999ff 0%, #0077dd 100%); color: #fff; box-shadow: 0 4px 14px rgba(0, 119, 221, 0.35); }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 119, 221, 0.5); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-secondary { background: rgba(255, 255, 255, 0.08); color: #c7d5e0; border: 1px solid rgba(255, 255, 255, 0.12); }
+    .btn-secondary:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+    .btn-danger { background: rgba(235, 77, 75, 0.15); color: #ff6b6b; border: 1px solid rgba(235, 77, 75, 0.3); font-size: 12px; padding: 5px 10px; border-radius: 6px; }
+    .btn-danger:hover { background: #eb4d4b; color: #fff; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+
+    /* Stat Cards */
+    .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .stat-card { background: linear-gradient(135deg, #17202d 0%, #101620 100%); border: 1px solid rgba(102,192,244,0.15); border-radius: 10px; padding: 18px; position: relative; overflow: hidden; }
+    .stat-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #66c0f4, transparent); }
+    .stat-title { font-size: 12px; color: #8f98a0; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-value { font-size: 26px; font-weight: 800; color: #66c0f4; }
+    .stat-value.highlight { color: #a4d007; }
+
+    /* Tables & Cards */
+    .section-title { font-size: 18px; color: #fff; font-weight: 700; display: flex; align-items: center; gap: 8px; margin: 28px 0 14px 0; }
+    .table-container { background: #141c28; border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; overflow: hidden; margin-bottom: 28px; }
+    .ranking-table { width: 100%; border-collapse: collapse; text-align: left; }
+    .ranking-table th, .ranking-table td { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; }
+    .ranking-table th { background: #1a2434; color: #8f98a0; font-size: 12px; font-weight: 600; }
+    .ranking-table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+    
+    .game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .game-card { background: #151d29; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); transition: transform 0.2s, border-color 0.2s; }
+    .game-card:hover { transform: translateY(-3px); border-color: rgba(102,192,244,0.4); }
+    .game-card img { width: 100%; height: 120px; object-fit: cover; background: #101620; }
+    .game-card-info { padding: 12px; }
+    .game-card-title { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .game-card-meta { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #a4d007; font-weight: 700; }
+
+    /* Dev & Test Box */
+    .dev-box { background: linear-gradient(180deg, #161e2b 0%, #111722 100%); border: 1px solid rgba(255, 170, 0, 0.25); border-radius: 10px; padding: 20px; margin-top: 32px; }
+    .dev-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
+    .dev-title { font-size: 16px; color: #ffaa00; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .search-input { background: #0c1017; border: 1px solid rgba(255, 255, 255, 0.15); color: #fff; padding: 7px 12px; border-radius: 6px; font-size: 12px; width: 240px; outline: none; transition: border-color 0.2s; }
+    .search-input:focus { border-color: #66c0f4; }
+    .db-table-scroll { max-height: 400px; overflow-y: auto; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; }
+
+    /* Toast Notification */
+    .toast { position: fixed; bottom: 24px; right: 24px; background: #1c2738; color: #fff; border: 1px solid #66c0f4; border-radius: 8px; padding: 14px 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); transform: translateY(150%); transition: transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28); z-index: 9999; max-width: 440px; display: flex; align-items: center; gap: 10px; }
+    .toast.show { transform: translateY(0); }
+    .toast.success { border-color: #a4d007; }
+    .toast.error { border-color: #eb4d4b; }
+    .toast-icon { font-size: 18px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div>
+        <h1>🎮 Steam 家庭资产全景看板</h1>
+        <span style="font-size: 12px; color: #8f98a0;">AstrBot Steam Family Agent • 实时监控与资产大盘</span>
+      </div>
+      <div class="header-actions">
+        <button id="btnSync" class="btn btn-primary" onclick="triggerSync()">
+          <span>⚡ 立即手动同步检查</span>
+        </button>
+        <button class="btn btn-secondary" onclick="loadData()">
+          <span>🔄 刷新</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="stat-cards">
+      <div class="stat-card">
+        <div class="stat-title">家庭库总游戏数</div>
+        <div class="stat-value" id="valTotalGames">-- <span style="font-size: 14px; font-weight: normal; color: #8f98a0;">款</span></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-title">总资产估值 (原价)</div>
+        <div class="stat-value highlight" id="valTotalInitial">¥ --</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-title">折后当前估值</div>
+        <div class="stat-value" id="valTotalCurrent">¥ --</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-title">家庭组总成员数</div>
+        <div class="stat-value" id="valMemberCount">-- <span style="font-size: 14px; font-weight: normal; color: #8f98a0;">位</span></div>
+      </div>
+    </div>
+
+    <!-- Ranking Table -->
+    <div class="section-title">👑 家庭义父资产贡献排行榜</div>
+    <div class="table-container">
+      <table class="ranking-table">
+        <thead>
+          <tr>
+            <th>排名</th>
+            <th>成员 SteamID</th>
+            <th>贡献游戏数</th>
+            <th>资产总原值 (¥)</th>
+            <th>资产折后估值 (¥)</th>
+          </tr>
+        </thead>
+        <tbody id="rankingTableBody">
+          <tr><td colspan="5" style="text-align: center; color: #8f98a0; padding: 20px;">正在加载数据...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Recent Games Preview -->
+    <div class="section-title">✨ 家庭库游戏封面预览</div>
+    <div class="game-grid" id="gameGrid">
+      <div style="grid-column: 1 / -1; text-align: center; color: #8f98a0; padding: 24px; background: #141c28; border-radius: 8px;">
+        正在加载游戏封面...
+      </div>
+    </div>
+
+    <!-- Dev & Testing Studio -->
+    <div class="dev-box">
+      <div class="dev-header">
+        <div>
+          <div class="dev-title">🛠️ 本地数据库与测试管理中心 (Test & Debug Studio)</div>
+          <div style="font-size: 12px; color: #8f98a0; margin-top: 4px;">
+            可在此直观查看当前快照库，或手动移出某款游戏以测试「下次同步时触发新入库卡片推送」功能。
+          </div>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <input type="text" id="gameSearch" class="search-input" placeholder="🔍 搜索游戏名称或 AppID..." onkeyup="filterGameTable()">
+          <button class="btn btn-secondary" style="font-size: 12px; color: #ff6b6b; border-color: rgba(235,77,75,0.4);" onclick="resetDatabase()">
+            🧹 重置快照数据库
+          </button>
+        </div>
+      </div>
+
+      <div class="db-table-scroll">
+        <table class="ranking-table" id="dbGameTable">
+          <thead>
+            <tr>
+              <th style="width: 80px;">AppID</th>
+              <th>游戏名称</th>
+              <th>归属成员 (SteamID)</th>
+              <th>当前价格</th>
+              <th style="text-align: center; width: 130px;">操作</th>
+            </tr>
+          </thead>
+          <tbody id="dbTableBody">
+            <tr><td colspan="5" style="text-align: center; color: #8f98a0; padding: 20px;">正在读取快照数据...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast">
+    <div id="toastIcon" class="toast-icon">ℹ️</div>
+    <div id="toastMsg" style="font-size: 13px; line-height: 1.4;">提示消息</div>
+  </div>
+
+  <script>
+    let globalSnapshotApps = [];
+
+    // Unified API requester supporting both AstrBotPluginPage Bridge and standalone HTTP fetch
+    async function apiRequest(endpoint, options = {}) {
+      const pluginBase = "/astrbot_plugin_steam_family";
+      const fullRoute = endpoint.startsWith(pluginBase) ? endpoint : `${pluginBase}${endpoint}`;
+      
+      if (window.AstrBotPluginPage && typeof window.AstrBotPluginPage.request === "function") {
+        try {
+          const resp = await window.AstrBotPluginPage.request(fullRoute, {
+            method: options.method || "GET",
+            query: options.query || {},
+            body: options.body || {}
+          });
+          return resp && resp.data !== undefined ? resp.data : resp;
+        } catch (e) {
+          console.warn("AstrBotPluginPage bridge call failed, falling back to fetch:", e);
+        }
+      }
+
+      // Standalone direct fetch fallback
+      const url = options.query ? `${endpoint}?${new URLSearchParams(options.query)}` : endpoint;
+      const resp = await fetch(url, {
+        method: options.method || "GET",
+        headers: { "Content-Type": "application/json" },
+        body: options.body ? JSON.stringify(options.body) : undefined
+      });
+      return await resp.json();
+    }
+
+    function showToast(msg, isSuccess = true) {
+      const toast = document.getElementById("toast");
+      const icon = document.getElementById("toastIcon");
+      const text = document.getElementById("toastMsg");
+      toast.className = "toast show " + (isSuccess ? "success" : "error");
+      icon.innerText = isSuccess ? "✅" : "⚠️";
+      text.innerText = msg;
+      setTimeout(() => { toast.className = "toast"; }, 5000);
+    }
+
+    async function loadData() {
+      try {
+        const data = await apiRequest("/api/data");
+        if (!data) return;
+
+        document.getElementById("valTotalGames").innerHTML = `${data.total_games || 0} <span style="font-size: 14px; font-weight: normal; color: #8f98a0;">款</span>`;
+        document.getElementById("valTotalInitial").innerText = `¥ ${data.total_initial_value || 0}`;
+        document.getElementById("valTotalCurrent").innerText = `¥ ${data.total_current_value || 0}`;
+        document.getElementById("valMemberCount").innerHTML = `${data.member_count || 0} <span style="font-size: 14px; font-weight: normal; color: #8f98a0;">位</span>`;
+
+        // Render Rankings
+        const rankBody = document.getElementById("rankingTableBody");
+        if (data.rankings && data.rankings.length > 0) {
+          rankBody.innerHTML = data.rankings.map((r, i) => `
+            <tr>
+              <td><b style="color: #66c0f4;">#${i + 1}</b></td>
+              <td><code>${r.steamid}</code></td>
+              <td><b>${r.game_count}</b> 款</td>
+              <td style="color: #a4d007; font-weight: 700;">¥ ${r.total_initial_price}</td>
+              <td>¥ ${r.total_current_price}</td>
+            </tr>
+          `).join("");
+        } else {
+          rankBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #8f98a0; padding: 20px;">暂无排行数据，点击上方「立即手动同步检查」拉取数据</td></tr>`;
+        }
+
+        // Render Recent Games Grid
+        const grid = document.getElementById("gameGrid");
+        if (data.recent_games && data.recent_games.length > 0) {
+          grid.innerHTML = data.recent_games.map(g => `
+            <div class="game-card">
+              <img src="${g.header_image}" alt="Cover" onerror="this.src='https://cdn.akamai.steamstatic.com/steam/apps/${g.appid}/header.jpg'">
+              <div class="game-card-info">
+                <div class="game-card-title" title="${g.name}">${g.name}</div>
+                <div class="game-card-meta">
+                  <span>¥ ${g.final_price}</span>
+                  <span style="color: #66c0f4; font-size: 11px;">好评率: ${g.positive_rate}%</span>
+                </div>
+              </div>
+            </div>
+          `).join("");
+        } else {
+          grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: #8f98a0; padding: 24px; background: #141c28; border-radius: 8px;">暂无游戏封面数据。点击上方「立即手动同步检查」开始同步！</div>`;
+        }
+
+        // Render Dev DB Table
+        globalSnapshotApps = data.all_snapshot_apps || [];
+        renderDbTable(globalSnapshotApps);
+      } catch (err) {
+        showToast("加载数据失败: " + err.message, false);
+      }
+    }
+
+    function renderDbTable(apps) {
+      const dbBody = document.getElementById("dbTableBody");
+      if (apps && apps.length > 0) {
+        dbBody.innerHTML = apps.map(app => `
+          <tr id="row-${app.appid}">
+            <td><code>${app.appid}</code></td>
+            <td><b>${app.name}</b> ${app.original_name && app.original_name !== app.name ? `<span style="color: #8f98a0; font-size: 11px;">(${app.original_name})</span>` : ''}</td>
+            <td><span style="color: #8f98a0; font-size: 12px;">${app.owners}</span></td>
+            <td style="color: #a4d007;">¥ ${app.final_price}</td>
+            <td style="text-align: center;">
+              <button class="btn btn-danger" onclick="removeApp(${app.appid}, '${app.name.replace(/'/g, "\\'")}')">
+                🗑️ 移出游戏
+              </button>
+            </td>
+          </tr>
+        `).join("");
+      } else {
+        dbBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #8f98a0; padding: 20px;">暂无快照数据</td></tr>`;
+      }
+    }
+
+    async function triggerSync() {
+      const btn = document.getElementById("btnSync");
+      btn.disabled = true;
+      btn.innerHTML = "⏳ 正在同步中...";
+      try {
+        const data = await apiRequest("/api/sync", { method: "POST" });
+        showToast(data.message || "同步完成！", data.success);
+        setTimeout(loadData, 1500);
+      } catch (err) {
+        showToast("同步请求失败: " + err.message, false);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = "⚡ 立即手动同步检查";
+      }
+    }
+
+    async function removeApp(appid, name) {
+      if (!confirm(`确定要从当前本地数据库快照中移出《${name}》(AppID: ${appid}) 吗？\n\n移出后点击「立即手动同步」，插件将检测到此游戏为【全新入库游戏】，并自动触发卡片渲染和消息推送！`)) {
+        return;
+      }
+      try {
+        const data = await apiRequest(`/api/db/remove_app`, { method: "POST", query: { appid: appid } });
+        if (data.success) {
+          showToast(`已成功将《${name}》从本地快照中移出！现在点击【立即手动同步】，将立即触发新游戏推送！`, true);
+          const row = document.getElementById(`row-${appid}`);
+          if (row) row.style.display = "none";
+        } else {
+          showToast(data.message || "操作失败", false);
+        }
+      } catch (err) {
+        showToast("请求失败: " + err.message, false);
+      }
+    }
+
+    async function resetDatabase() {
+      if (!confirm("⚠️ 确定要清空/重置本地快照数据库吗？\n\n清空后下次同步将重新建立初始基线快照。")) {
+        return;
+      }
+      try {
+        const data = await apiRequest("/api/db/reset_snapshots", { method: "POST" });
+        showToast(data.message || "快照数据库已重置！", true);
+        setTimeout(loadData, 1200);
+      } catch (err) {
+        showToast("重置失败: " + err.message, false);
+      }
+    }
+
+    function filterGameTable() {
+      const q = document.getElementById("gameSearch").value.toLowerCase();
+      const filtered = globalSnapshotApps.filter(app => 
+        String(app.appid).includes(q) ||
+        (app.name && app.name.toLowerCase().includes(q)) ||
+        (app.original_name && app.original_name.toLowerCase().includes(q)) ||
+        (app.owners && app.owners.includes(q))
+      );
+      renderDbTable(filtered);
+    }
+
+    // Auto-load on startup
+    window.addEventListener("DOMContentLoaded", loadData);
+  </script>
+</body>
+</html>

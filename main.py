@@ -21,6 +21,9 @@ except ImportError:
         async def send_message(self, *args, **kwargs):
             pass
 
+        def register_web_api(self, *args, **kwargs):
+            pass
+
     def register(*args, **kwargs):
         return lambda cls: cls
 
@@ -60,15 +63,22 @@ except ImportError:
     AstrBotConfig = dict
 
 try:
+    from astrbot.api.web import json_response, request
+except ImportError:
+
+    def json_response(data, status_code=200):
+        return data
+
+    class request:
+        query = {}
+
+
+try:
     from .agent.tools import SteamAgentTools
     from .config import PluginConfig
     from .core.diff_engine import FamilyDiffEngine
     from .core.renderer import CardRenderer
-    from .core.steam_api import (
-        SteamAuthExpiredError,
-        SteamFamilyClient,
-        SteamRateLimitError,
-    )
+    from .core.steam_api import SteamAuthExpiredError, SteamFamilyClient, SteamRateLimitError
     from .core.storage import FamilyStorage
     from .core.web_server import DashboardWebServer
 except (ImportError, ValueError):
@@ -76,11 +86,7 @@ except (ImportError, ValueError):
     from config import PluginConfig
     from core.diff_engine import FamilyDiffEngine
     from core.renderer import CardRenderer
-    from core.steam_api import (
-        SteamAuthExpiredError,
-        SteamFamilyClient,
-        SteamRateLimitError,
-    )
+    from core.steam_api import SteamAuthExpiredError, SteamFamilyClient, SteamRateLimitError
     from core.storage import FamilyStorage
     from core.web_server import DashboardWebServer
 
@@ -120,8 +126,69 @@ class SteamFamilyPlugin(Star):
         self.web_server: DashboardWebServer | None = None
         self._polling_task: asyncio.Task | None = None
 
+        # Register AstrBot Web APIs for embedded Plugin Pages
+        self._register_astrbot_web_apis()
+
         # Start async initialization
         asyncio.create_task(self._init_and_start_polling())
+
+    def _register_astrbot_web_apis(self):
+        """Register Web APIs for AstrBot WebUI Plugin Page integration."""
+        if hasattr(self.context, "register_web_api"):
+            try:
+                self.context.register_web_api(
+                    "/astrbot_plugin_steam_family/api/data",
+                    self.web_api_get_data,
+                    ["GET"],
+                    "获取 Steam 家庭资产大盘全量数据",
+                )
+                self.context.register_web_api(
+                    "/astrbot_plugin_steam_family/api/sync",
+                    self.web_api_sync,
+                    ["POST", "GET"],
+                    "手动触发家庭库同步与推送",
+                )
+                self.context.register_web_api(
+                    "/astrbot_plugin_steam_family/api/db/remove_app",
+                    self.web_api_remove_app,
+                    ["POST", "GET"],
+                    "从快照中移出指定游戏（测试新游戏入库推送）",
+                )
+                self.context.register_web_api(
+                    "/astrbot_plugin_steam_family/api/db/reset_snapshots",
+                    self.web_api_reset_snapshots,
+                    ["POST", "GET"],
+                    "重置清空快照数据库",
+                )
+                logger.info("Successfully registered AstrBot Web APIs for Plugin Pages.")
+            except Exception as e:
+                logger.warning(f"Failed to register AstrBot Web APIs: {e}")
+
+    async def web_api_get_data(self):
+        data = await self.storage.get_dashboard_data()
+        return json_response(data)
+
+    async def web_api_sync(self):
+        msg = await self._check_and_notify()
+        success = not msg.startswith("❌") and not msg.startswith("⚠️")
+        return json_response({"success": success, "message": msg})
+
+    async def web_api_remove_app(self):
+        appid = 0
+        if hasattr(request, "query") and isinstance(request.query, dict):
+            appid_str = request.query.get("appid", "0")
+            appid = int(appid_str) if str(appid_str).isdigit() else 0
+        ok = await self.storage.remove_app_from_latest_snapshot(appid) if appid > 0 else False
+        return json_response(
+            {
+                "success": ok,
+                "message": f"已从当前快照中移出 AppID {appid}" if ok else "未能找到该游戏快照",
+            }
+        )
+
+    async def web_api_reset_snapshots(self):
+        await self.storage.reset_snapshots()
+        return json_response({"success": True, "message": "本地快照数据库已成功重置"})
 
     def _refresh_config(self):
         """Dynamically reload config from AstrBotConfig or context."""
@@ -141,7 +208,8 @@ class SteamFamilyPlugin(Star):
                 or self.client.timeout != self.config.request_timeout
             ):
                 self.client = SteamFamilyClient(
-                    proxy=self.config.proxy, timeout=self.config.request_timeout
+                    proxy=self.config.proxy,
+                    timeout=self.config.request_timeout,
                 )
 
     async def _init_and_start_polling(self):
@@ -394,7 +462,10 @@ class SteamFamilyPlugin(Star):
         result = await self.agent_tools.find_coop_games(ids)
         yield event.plain_result(result)
 
-    @filter.command("steam_dashboard", alias={"steam dashboard", "steam大盘", "steam看板"})
+    @filter.command(
+        "steam_dashboard",
+        alias={"steam dashboard", "steam大盘", "steam看板"},
+    )
     async def cmd_dashboard(self, event: AstrMessageEvent):
         """获取 Steam 家庭资产全景 Web 看板访问地址。"""
         if not self.config.enable_dashboard_server:
