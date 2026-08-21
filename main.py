@@ -214,20 +214,33 @@ class SteamFamilyPlugin(Star):
                     logger.debug(f"Route registration notice for {route_path}: {e}")
             logger.info("Successfully registered AstrBot Web APIs for Plugin Pages.")
 
-    async def web_api_get_data(self):
+    async def web_api_get_data(self, *args, **kwargs):
         data = await self.storage.get_dashboard_data()
         return json_response(data)
 
-    async def web_api_sync(self):
+    async def web_api_sync(self, *args, **kwargs):
         msg = await self._check_and_notify()
         success = not msg.startswith("❌") and not msg.startswith("⚠️")
         return json_response({"success": success, "message": msg})
 
-    async def web_api_remove_app(self):
+    async def web_api_remove_app(self, *args, **kwargs):
         appid = 0
-        if hasattr(request, "query") and isinstance(request.query, dict):
+        for arg in args:
+            if hasattr(arg, "query_params"):
+                val = arg.query_params.get("appid", "0")
+                if str(val).isdigit():
+                    appid = int(val)
+            elif isinstance(arg, dict):
+                val = arg.get("appid", 0)
+                if str(val).isdigit() or isinstance(val, int):
+                    appid = int(val)
+        if appid == 0 and "appid" in kwargs:
+            val = kwargs["appid"]
+            appid = int(val) if str(val).isdigit() else 0
+        if appid == 0 and hasattr(request, "query") and isinstance(request.query, dict):
             appid_str = request.query.get("appid", "0")
             appid = int(appid_str) if str(appid_str).isdigit() else 0
+
         ok = await self.storage.remove_app_from_latest_snapshot(appid) if appid > 0 else False
         return json_response(
             {
@@ -236,7 +249,7 @@ class SteamFamilyPlugin(Star):
             }
         )
 
-    async def web_api_reset_snapshots(self):
+    async def web_api_reset_snapshots(self, *args, **kwargs):
         await self.storage.reset_snapshots()
         return json_response({"success": True, "message": "本地快照数据库已成功重置"})
 
