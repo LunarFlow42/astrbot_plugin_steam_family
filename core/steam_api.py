@@ -47,11 +47,33 @@ class AppDetails(BaseModel):
     review_summary: str = ""
 
 
+class SteamStoreRateLimiter:
+    """
+    Steam 商店接口主动令牌桶速率限制器。
+    Steam Store API (store.steampowered.com/api/appdetails) 的官方未公开阈值为 200次 / 5分钟 (即约 40次/分钟)。
+    本限制器强制请求间距 >= 1.6 秒 (约 37次/分钟)，在发包前主动拦截限速，彻底从源头杜绝触发 429 风控与防爬拦截。
+    """
+
+    def __init__(self, min_interval: float = 1.6):
+        self.min_interval = min_interval
+        self._last_time: float = 0.0
+        self._lock = asyncio.Lock()
+
+    async def acquire(self):
+        async with self._lock:
+            now = asyncio.get_event_loop().time()
+            elapsed = now - self._last_time
+            if elapsed < self.min_interval:
+                await asyncio.sleep(self.min_interval - elapsed)
+            self._last_time = asyncio.get_event_loop().time()
+
+
 class SteamFamilyClient:
     def __init__(self, proxy: str = "", timeout: int = 20):
         self.proxy = proxy
         self.timeout = timeout
         self._rate_limited_until: float = 0.0
+        self._store_limiter = SteamStoreRateLimiter(min_interval=1.6)
         self._client = httpx.AsyncClient(
             proxy=self.proxy or None,
             timeout=self.timeout,
@@ -208,6 +230,9 @@ class SteamFamilyClient:
             raise SteamRateLimitError(
                 f"Steam 商店接口当前处于 429 速率风控冷却中（还剩 {self.rate_limit_cooldown_remaining} 秒），已自动熔断暂停向 Steam 发起请求。"
             )
+
+        # Proactively rate limit before dispatching request to Steam Store
+        await self._store_limiter.acquire()
 
         url = "https://store.steampowered.com/api/appdetails"
         params = {"appids": appid, "cc": "cn", "l": "schinese"}

@@ -205,6 +205,7 @@ class SteamFamilyPlugin(Star):
         self.renderer = CardRenderer()
         self.agent_tools = SteamAgentTools(self.storage)
         self._polling_task: asyncio.Task | None = None
+        self._warmup_task: asyncio.Task | None = None
 
         # Register AstrBot Web APIs for embedded Plugin Pages
         self._register_astrbot_web_apis()
@@ -384,8 +385,17 @@ class SteamFamilyPlugin(Star):
         except Exception as e:
             logger.error(f"Error during plugin startup: {e}")
 
+    def _trigger_warmup(self, apps: list):
+        """Trigger background price warmup without duplicate tasks."""
+        if self._warmup_task and not self._warmup_task.done():
+            logger.debug(
+                "Background price warmup task is already in progress, skipping duplicate trigger."
+            )
+            return
+        self._warmup_task = asyncio.create_task(self._warmup_app_details(apps))
+
     async def _warmup_app_details(self, apps: list):
-        """Asynchronously warm up cache for uncached apps with rate-limit circuit breaking."""
+        """Asynchronously warm up cache for uncached apps with proactive token-bucket rate limiting."""
         try:
             cached_apps = await self.storage.get_all_cached_apps()
             cached_ids = {a.appid for a in cached_apps}
@@ -401,26 +411,24 @@ class SteamFamilyPlugin(Star):
 
             # Prioritize newest / most recently acquired games first
             uncached.sort(
-                key=lambda a: (getattr(a, "rt_time_acquired", 0), a.appid),
+                key=lambda a: (int(getattr(a, "rt_time_acquired", 0) or 0), a.appid),
                 reverse=True,
             )
             logger.info(
-                f"Starting safe background price warmup for {len(uncached)} uncached games..."
+                f"Starting proactive rate-limited background price warmup for {len(uncached)} uncached games (paced at 1 req / 1.6s)..."
             )
 
-            # Use safe concurrency and circuit breaking
-            sem = asyncio.Semaphore(2)
-
-            async def fetch_one(app):
-                async with sem:
-                    if self.client.is_rate_limited:
-                        return None
-                    try:
-                        details = await self.client.get_app_details(app.appid, basic_only=True)
-                        if details:
-                            return details
-                        # Fallback for delisted or unpriced apps so they don't query repeatedly
-                        return AppDetails(
+            batch_to_save: list[AppDetails] = []
+            for app in uncached:
+                if self.client.is_rate_limited:
+                    logger.warning(
+                        f"Steam 处于 429 风控冷却中（剩余 {self.client.rate_limit_cooldown_remaining} 秒），已安全终止本次后台估值。"
+                    )
+                    break
+                try:
+                    details = await self.client.get_app_details(app.appid, basic_only=True)
+                    if not details:
+                        details = AppDetails(
                             appid=app.appid,
                             name=app.name,
                             chinese_name=app.name,
@@ -434,31 +442,21 @@ class SteamFamilyPlugin(Star):
                             positive_rate=90,
                             review_summary="入库共享",
                         )
-                    except SteamRateLimitError:
-                        logger.warning(
-                            f"Steam 商店接口触发 429 风控限流，已自动触发熔断！立即停止后续请求，进入 {self.client.rate_limit_cooldown_remaining} 秒冷却保护期。"
-                        )
-                        return "RATE_LIMIT"
-                    except Exception as e:
-                        logger.debug(f"Detail warmup skipped for app {app.appid}: {e}")
-                        return None
-
-            # Process in small batches of 10 with safe pacing
-            for i in range(0, len(uncached), 10):
-                if self.client.is_rate_limited:
+                    batch_to_save.append(details)
+                    if len(batch_to_save) >= 5:
+                        await self.storage.cache_app_details_batch(batch_to_save)
+                        batch_to_save.clear()
+                except SteamRateLimitError:
                     logger.warning(
-                        f"Steam 处于 429 风控冷却中（剩余 {self.client.rate_limit_cooldown_remaining} 秒），已终止本次后台估值。"
+                        f"Steam 商店接口触发 429 速率风控，已自动熔断暂停！冷却剩余 {self.client.rate_limit_cooldown_remaining} 秒。"
                     )
                     break
-                chunk = uncached[i : i + 10]
-                results = await asyncio.gather(*(fetch_one(app) for app in chunk))
-                if "RATE_LIMIT" in results:
-                    break
-                valid_details = [r for r in results if isinstance(r, AppDetails)]
-                if valid_details:
-                    await self.storage.cache_app_details_batch(valid_details)
-                await asyncio.sleep(0.35)
-            logger.info("Background price warmup batch finished.")
+                except Exception as ex:
+                    logger.debug(f"Warmup lookup failed for app {app.appid}: {ex}")
+
+            if batch_to_save:
+                await self.storage.cache_app_details_batch(batch_to_save)
+            logger.info("Proactive background price warmup cycle completed.")
         except Exception as ex:
             logger.warning(f"Error in background warmup task: {ex}")
 
@@ -546,8 +544,8 @@ class SteamFamilyPlugin(Star):
             # Persist latest snapshot
             await self.storage.save_snapshot(current_apps)
 
-            # Warm up price details for uncached apps in background
-            asyncio.create_task(self._warmup_app_details(current_apps))
+            # Warm up price details for uncached apps in background safely
+            self._trigger_warmup(current_apps)
 
             if diff.is_first_run:
                 logger.info(f"Steam Family initial baseline saved with {len(current_apps)} games.")
