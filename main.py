@@ -95,6 +95,7 @@ try:
         SteamAuthExpiredError,
         SteamFamilyClient,
         SteamRateLimitError,
+        decode_steam_jwt,
     )
     from .core.storage import FamilyStorage
 except (ImportError, ValueError):
@@ -107,6 +108,7 @@ except (ImportError, ValueError):
         SteamAuthExpiredError,
         SteamFamilyClient,
         SteamRateLimitError,
+        decode_steam_jwt,
     )
     from core.storage import FamilyStorage
 
@@ -288,6 +290,16 @@ class SteamFamilyPlugin(Star):
         data = await self.storage.get_dashboard_data()
         data["is_rate_limited"] = self.client.is_rate_limited
         data["rate_limit_cooldown_remaining"] = self.client.rate_limit_cooldown_remaining
+
+        # Live JWT credential status
+        jwt_info = decode_steam_jwt(self.config.access_token)
+        data["token_info"] = {
+            "valid": bool(jwt_info and not jwt_info.get("is_expired")),
+            "is_expired": bool(jwt_info.get("is_expired", True)) if jwt_info else True,
+            "remaining_hours": jwt_info.get("remaining_hours", 0.0) if jwt_info else 0.0,
+            "steamid": jwt_info.get("steamid", "") if jwt_info else "",
+            "has_cookie_autorenew": bool(self.config.cookie),
+        }
         return make_cors_response(data)
 
     async def web_api_sync(self, *args, **kwargs):
@@ -486,19 +498,36 @@ class SteamFamilyPlugin(Star):
             f"Checking Steam Family. Token present: {bool(self.config.access_token)}, Cookie present: {bool(self.config.cookie)}, SteamID: {self.config.steam_id}"
         )
 
-        if not self.config.access_token and not self.config.cookie:
-            return "⚠️ 未检测到有效配置：未填写 Steam Access Token 或 Cookie，请在 WebUI 设置或使用 /steam_bind 绑定。"
-
-        if not self.config.steam_id:
-            return "⚠️ 未检测到配置：未填写 17 位 SteamID，请在 WebUI 中填入你的 Steam 64 位 ID。"
-
-        # Attempt auto-refresh token if cookie is set
-        if not self.config.access_token and self.config.cookie:
+        # 1. Proactive JWT decoding & Cookie auto-refresh (<1h remaining)
+        jwt_info = decode_steam_jwt(self.config.access_token)
+        if self.config.cookie and (
+            not self.config.access_token
+            or not jwt_info
+            or jwt_info.get("remaining_seconds", 0) < 3600
+        ):
+            logger.info(
+                "Access Token is missing, expired, or expiring soon (<1h). Proactively refreshing via Cookie..."
+            )
             new_token = await self.client.refresh_token_via_cookie(self.config.cookie)
             if new_token:
                 self.config.access_token = new_token
-            else:
-                return "⚠️ 尝试通过 Cookie 获取 Access Token 失败，请检查 Cookie 有效性或直接在 WebUI 中填入 Access Token。"
+                jwt_info = decode_steam_jwt(new_token)
+                logger.info("Successfully refreshed Access Token via Cookie.")
+            elif not self.config.access_token or (jwt_info and jwt_info.get("is_expired")):
+                return "⚠️ Steam Access Token 已失效且 Cookie 自动刷新失败，请检查 Cookie 有效性或在 WebUI 填入最新 Token！"
+
+        if not self.config.access_token and not self.config.cookie:
+            return "⚠️ 未检测到有效配置：未填写 Steam Access Token 或 Cookie，请在 WebUI 设置或使用 /steam_bind 绑定。"
+
+        # 2. Auto-detect SteamID from JWT payload if not configured
+        if not self.config.steam_id and jwt_info and jwt_info.get("steamid"):
+            self.config.steam_id = jwt_info["steamid"]
+            logger.info(
+                f"Automatically extracted SteamID {self.config.steam_id} from Access Token JWT."
+            )
+
+        if not self.config.steam_id:
+            return "⚠️ 未检测到配置：未填写 17 位 SteamID，请在 WebUI 中填入你的 Steam 64 位 ID。"
 
         try:
             group_id = self.config.family_group_id

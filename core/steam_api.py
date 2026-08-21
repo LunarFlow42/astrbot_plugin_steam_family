@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import json
 import logging
 import time
 from typing import Any
@@ -7,6 +9,49 @@ import httpx
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+
+def decode_steam_jwt(token: str) -> dict[str, Any] | None:
+    """
+    纯本地解析 Steam WebAPI JWT Access Token，提取 SteamID64 与过期时间戳（零网络开销）。
+    返回结构:
+      - valid: bool
+      - steamid: str (sub 字段，即 64 位 SteamID)
+      - exp: int (过期 UNIX 时间戳)
+      - iat: int (签发 UNIX 时间戳)
+      - is_expired: bool
+      - remaining_seconds: int
+      - remaining_hours: float
+    """
+    if not token or "." not in token:
+        return None
+    try:
+        parts = token.split(".")
+        if len(parts) < 2:
+            return None
+        payload_b64 = parts[1]
+        rem = len(payload_b64) % 4
+        if rem > 0:
+            payload_b64 += "=" * (4 - rem)
+        payload_bytes = base64.urlsafe_b64decode(payload_b64)
+        data = json.loads(payload_bytes.decode("utf-8"))
+        exp = int(data.get("exp", 0))
+        sub = str(data.get("sub", ""))
+        iat = int(data.get("iat", 0))
+        now = int(time.time())
+        is_expired = now >= exp
+        remaining = max(0, exp - now)
+        return {
+            "valid": True,
+            "steamid": sub,
+            "exp": exp,
+            "iat": iat,
+            "is_expired": is_expired,
+            "remaining_seconds": remaining,
+            "remaining_hours": round(remaining / 3600.0, 1),
+        }
+    except Exception:
+        return None
 
 
 class SteamAuthExpiredError(Exception):
@@ -30,6 +75,9 @@ class SharedApp(BaseModel):
     exclude_reason: int = 0
     app_type: int = 1
     rt_time_acquired: int = 0
+    rt_last_played: int = 0
+    rt_playtime: int = 0
+    img_icon_hash: str = ""
 
 
 class AppDetails(BaseModel):
@@ -140,6 +188,7 @@ class SteamFamilyClient:
             "include_own": "true",
             "include_excluded": "true",
             "include_non_games": "true",
+            "language": "schinese",
         }
 
         retries = 3
@@ -164,6 +213,28 @@ class SteamFamilyClient:
                     raise e
                 await asyncio.sleep(delay)
                 delay *= 2
+        return []
+
+    async def get_playtime_summary(
+        self, family_group_id: str, access_token: str
+    ) -> list[dict[str, Any]]:
+        """
+        获取家庭组成员在各游戏上的总游玩时长与最新游玩记录 (IFamilyGroupsService/GetPlaytimeSummary)。
+        """
+        url = "https://api.steampowered.com/IFamilyGroupsService/GetPlaytimeSummary/v1/"
+        params = {
+            "family_groupid": family_group_id,
+            "access_token": access_token,
+        }
+        try:
+            resp = await self._client.get(url, params=params)
+            if resp.status_code in (401, 403):
+                raise SteamAuthExpiredError("Steam Access Token expired.")
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("response", {}).get("entries", [])
+        except Exception as e:
+            logger.debug(f"Failed to fetch playtime summary: {e}")
         return []
 
     def parse_shared_apps(
@@ -210,6 +281,10 @@ class SteamFamilyClient:
             except (ValueError, TypeError):
                 rt_time_acquired = 0
 
+            rt_last_played = int(item.get("rt_last_played") or 0)
+            rt_playtime = int(item.get("rt_playtime") or 0)
+            img_icon_hash = str(item.get("img_icon_hash") or "")
+
             shared_apps.append(
                 SharedApp(
                     appid=appid,
@@ -218,6 +293,9 @@ class SteamFamilyClient:
                     exclude_reason=exclude_reason,
                     app_type=app_type,
                     rt_time_acquired=rt_time_acquired,
+                    rt_last_played=rt_last_played,
+                    rt_playtime=rt_playtime,
+                    img_icon_hash=img_icon_hash,
                 )
             )
         return shared_apps
