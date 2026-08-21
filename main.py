@@ -285,6 +285,8 @@ class SteamFamilyPlugin(Star):
 
     async def web_api_get_data(self, *args, **kwargs):
         data = await self.storage.get_dashboard_data()
+        data["is_rate_limited"] = self.client.is_rate_limited
+        data["rate_limit_cooldown_remaining"] = self.client.rate_limit_cooldown_remaining
         return make_cors_response(data)
 
     async def web_api_sync(self, *args, **kwargs):
@@ -310,17 +312,33 @@ class SteamFamilyPlugin(Star):
             appid_str = request.query.get("appid", "0")
             appid = int(appid_str) if str(appid_str).isdigit() else 0
 
-        ok = await self.storage.remove_app_from_latest_snapshot(appid) if appid > 0 else False
+        if not appid:
+            return make_cors_response(
+                {"success": False, "message": "Missing or invalid appid parameter"},
+                status_code=400,
+            )
+
+        success = await self.storage.remove_app_from_snapshot(appid)
+        if success:
+            return make_cors_response(
+                {
+                    "success": True,
+                    "message": f"AppID {appid} has been removed from local snapshot baseline. Next sync check will detect it as a newly added game and broadcast it.",
+                }
+            )
         return make_cors_response(
-            {
-                "success": ok,
-                "message": f"已从当前快照中移出 AppID {appid}" if ok else "未能找到该游戏快照",
-            }
+            {"success": False, "message": f"AppID {appid} not found in latest snapshot baseline."},
+            status_code=404,
         )
 
     async def web_api_reset_snapshots(self, *args, **kwargs):
         await self.storage.reset_snapshots()
-        return make_cors_response({"success": True, "message": "本地快照数据库已成功重置"})
+        return make_cors_response(
+            {
+                "success": True,
+                "message": "Snapshot baseline has been reset successfully.",
+            }
+        )
 
     def _refresh_config(self):
         """Dynamically reload config from AstrBotConfig or context."""
@@ -367,12 +385,18 @@ class SteamFamilyPlugin(Star):
             logger.error(f"Error during plugin startup: {e}")
 
     async def _warmup_app_details(self, apps: list):
-        """Asynchronously and high-concurrency warm up cache for uncached apps in batches."""
+        """Asynchronously warm up cache for uncached apps with rate-limit circuit breaking."""
         try:
             cached_apps = await self.storage.get_all_cached_apps()
             cached_ids = {a.appid for a in cached_apps}
             uncached = [a for a in apps if a.appid not in cached_ids]
             if not uncached:
+                return
+
+            if self.client.is_rate_limited:
+                logger.warning(
+                    f"Steam 商店接口当前正处于 429 速率风控冷却中（还剩 {self.client.rate_limit_cooldown_remaining} 秒），自动熔断跳过本次后台估值。"
+                )
                 return
 
             # Prioritize newest / most recently acquired games first
@@ -381,18 +405,21 @@ class SteamFamilyPlugin(Star):
                 reverse=True,
             )
             logger.info(
-                f"Starting high-speed background price warmup for {len(uncached)} uncached games..."
+                f"Starting safe background price warmup for {len(uncached)} uncached games..."
             )
 
-            sem = asyncio.Semaphore(20)
+            # Use safe concurrency and circuit breaking
+            sem = asyncio.Semaphore(2)
 
             async def fetch_one(app):
                 async with sem:
+                    if self.client.is_rate_limited:
+                        return None
                     try:
                         details = await self.client.get_app_details(app.appid, basic_only=True)
                         if details:
                             return details
-                        # Fallback for delisted or unpriced apps to prevent infinite retries
+                        # Fallback for delisted or unpriced apps so they don't query repeatedly
                         return AppDetails(
                             appid=app.appid,
                             name=app.name,
@@ -407,19 +434,31 @@ class SteamFamilyPlugin(Star):
                             positive_rate=90,
                             review_summary="入库共享",
                         )
+                    except SteamRateLimitError:
+                        logger.warning(
+                            f"Steam 商店接口触发 429 风控限流，已自动触发熔断！立即停止后续请求，进入 {self.client.rate_limit_cooldown_remaining} 秒冷却保护期。"
+                        )
+                        return "RATE_LIMIT"
                     except Exception as e:
                         logger.debug(f"Detail warmup skipped for app {app.appid}: {e}")
                         return None
 
-            # Process in chunks of 40 games per batch with single-transaction SQLite bulk commit
-            for i in range(0, len(uncached), 40):
-                chunk = uncached[i : i + 40]
+            # Process in small batches of 10 with safe pacing
+            for i in range(0, len(uncached), 10):
+                if self.client.is_rate_limited:
+                    logger.warning(
+                        f"Steam 处于 429 风控冷却中（剩余 {self.client.rate_limit_cooldown_remaining} 秒），已终止本次后台估值。"
+                    )
+                    break
+                chunk = uncached[i : i + 10]
                 results = await asyncio.gather(*(fetch_one(app) for app in chunk))
-                valid_details = [r for r in results if r is not None]
+                if "RATE_LIMIT" in results:
+                    break
+                valid_details = [r for r in results if isinstance(r, AppDetails)]
                 if valid_details:
                     await self.storage.cache_app_details_batch(valid_details)
-                await asyncio.sleep(0.05)
-            logger.info(f"High-speed background price warmup completed for {len(uncached)} games.")
+                await asyncio.sleep(0.35)
+            logger.info("Background price warmup batch finished.")
         except Exception as ex:
             logger.warning(f"Error in background warmup task: {ex}")
 

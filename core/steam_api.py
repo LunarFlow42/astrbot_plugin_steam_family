@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -50,6 +51,7 @@ class SteamFamilyClient:
     def __init__(self, proxy: str = "", timeout: int = 20):
         self.proxy = proxy
         self.timeout = timeout
+        self._rate_limited_until: float = 0.0
         self._client = httpx.AsyncClient(
             proxy=self.proxy or None,
             timeout=self.timeout,
@@ -58,6 +60,15 @@ class SteamFamilyClient:
             },
         )
         self._app_details_cache: dict[int, AppDetails] = {}
+
+    @property
+    def is_rate_limited(self) -> bool:
+        return time.time() < self._rate_limited_until
+
+    @property
+    def rate_limit_cooldown_remaining(self) -> int:
+        remaining = int(self._rate_limited_until - time.time())
+        return max(0, remaining)
 
     async def close(self):
         await self._client.aclose()
@@ -181,12 +192,27 @@ class SteamFamilyClient:
         if appid in self._app_details_cache:
             return self._app_details_cache[appid]
 
+        if self.is_rate_limited:
+            raise SteamRateLimitError(
+                f"Steam 商店接口当前处于 429 速率风控冷却中（还剩 {self.rate_limit_cooldown_remaining} 秒），已自动熔断暂停向 Steam 发起请求。"
+            )
+
         url = "https://store.steampowered.com/api/appdetails"
         params = {"appids": appid, "cc": "cn", "l": "schinese"}
         if basic_only:
             params["filters"] = "price_overview,basic,genres"
         try:
             resp = await self._client.get(url, params=params, timeout=10.0)
+            if resp.status_code == 429:
+                # Set 60 seconds cooldown to protect IP
+                self._rate_limited_until = time.time() + 60.0
+                logger.warning(
+                    f"Steam 商店接口对 AppID {appid} 返回 429 Too Many Requests！已触发自动熔断，暂停请求 60 秒。"
+                )
+                raise SteamRateLimitError(
+                    "Steam 商店接口触发 429 速率风控，已触发熔断保护并进入 60 秒冷却期。"
+                )
+
             if resp.status_code == 200:
                 data = resp.json()
                 app_info = data.get(str(appid), {})
@@ -195,6 +221,8 @@ class SteamFamilyClient:
                     details = self._parse_store_details(appid, app_data)
                     self._app_details_cache[appid] = details
                     return details
+        except SteamRateLimitError:
+            raise
         except Exception as e:
             logger.debug(f"Store details query for app {appid}: {e}")
         return None

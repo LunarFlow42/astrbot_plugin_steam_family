@@ -506,6 +506,16 @@
 
     let pollTimer = null;
     function checkAndStartPolling(data) {
+      if (data.is_rate_limited) {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+        const waitMs = ((data.rate_limit_cooldown_remaining || 60) + 2) * 1000;
+        setTimeout(loadData, waitMs);
+        return;
+      }
+
       const total = data.total_games || 0;
       const cached = data.cached_games_count !== undefined ? data.cached_games_count : total;
       if (cached < total && total > 0) {
@@ -518,15 +528,18 @@
                 globalData = d;
                 globalSnapshotApps = d.all_snapshot_apps || [];
                 renderOverview(d);
-                if ((d.cached_games_count || 0) >= (d.total_games || 0)) {
+                if (d.is_rate_limited || (d.cached_games_count || 0) >= (d.total_games || 0)) {
                   clearInterval(pollTimer);
                   pollTimer = null;
                   filterLibrary();
                   renderStudioTable(globalSnapshotApps);
+                  if (d.is_rate_limited) {
+                    checkAndStartPolling(d);
+                  }
                 }
               }
             } catch (e) {}
-          }, 1800);
+          }, 3000);
         }
       } else {
         if (pollTimer) {
@@ -565,8 +578,10 @@
       const cachedCount = data.cached_games_count !== undefined ? data.cached_games_count : totalGames;
 
       document.getElementById("valTotalGames").innerHTML = `${totalGames} <span style="font-size: 14px; font-weight: normal; color: var(--text-dim);">款</span>`;
-      if (cachedCount < totalGames && totalGames > 0) {
-        document.getElementById("valValuationStatus").innerHTML = `⏳ 已估值 <b style="color:var(--steam-blue);">${cachedCount}</b>/${totalGames} 款 (后台持续补充中...)`;
+      if (data.is_rate_limited) {
+        document.getElementById("valValuationStatus").innerHTML = `🛑 <b style="color:var(--accent-amber);">Steam 触发 429 风控</b> (已自动熔断暂停，保护 IP，冷却剩 ${data.rate_limit_cooldown_remaining || 60}s)`;
+      } else if (cachedCount < totalGames && totalGames > 0) {
+        document.getElementById("valValuationStatus").innerHTML = `⏳ 已估值 <b style="color:var(--steam-blue);">${cachedCount}</b>/${totalGames} 款 (后台温和估值中...)`;
       } else {
         document.getElementById("valValuationStatus").innerText = `✅ 全库 ${totalGames} 款游戏已完成 100% 估值`;
       }
