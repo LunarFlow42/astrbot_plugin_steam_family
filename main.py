@@ -103,6 +103,39 @@ except (ImportError, ValueError):
 logger = logging.getLogger(__name__)
 
 
+def make_cors_response(data: dict | list | str, status_code: int = 200):
+    """
+    按照 AstrBot 官方标准构建响应。
+    当返回 {"status": "ok", "data": ...} 时，bridge.apiGet 会自动直接 resolve 为 data 内容。
+    同时添加 Access-Control-Allow-Origin: * 响应头，确保跨域与沙盒环境 100% 畅通。
+    """
+    payload = (
+        {"status": "ok", "data": data, **(data if isinstance(data, dict) else {})}
+        if isinstance(data, (dict, list))
+        else {"status": "ok", "message": str(data)}
+    )
+
+    headers = {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS, PUT, DELETE",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Max-Age": "86400",
+    }
+    try:
+        from fastapi.responses import JSONResponse
+
+        return JSONResponse(content=payload, status_code=status_code, headers=headers)
+    except Exception:
+        pass
+    try:
+        from starlette.responses import JSONResponse
+
+        return JSONResponse(content=payload, status_code=status_code, headers=headers)
+    except Exception:
+        pass
+    return json_response(payload)
+
+
 def _get_db_path() -> str:
     """
     获取 AstrBot 规范持久化数据库路径 (位于 data/plugin_data/{plugin_name}/steam_family.db)。
@@ -170,37 +203,63 @@ class SteamFamilyPlugin(Star):
         asyncio.create_task(self._init_and_start_polling())
 
     def _register_astrbot_web_apis(self):
-        """Register Web APIs for AstrBot WebUI Plugin Page integration."""
+        """Register Web APIs per official AstrBot Plugin Pages standard."""
         if hasattr(self.context, "register_web_api"):
             routes = [
-                ("/astrbot_plugin_steam_family/api/data", self.web_api_get_data, ["GET"]),
-                ("/astrbot_plugin_steam_family/data", self.web_api_get_data, ["GET"]),
-                ("/api/data", self.web_api_get_data, ["GET"]),
-                ("/astrbot_plugin_steam_family/api/sync", self.web_api_sync, ["POST", "GET"]),
-                ("/astrbot_plugin_steam_family/sync", self.web_api_sync, ["POST", "GET"]),
-                ("/api/sync", self.web_api_sync, ["POST", "GET"]),
+                # Official standard relative routes
+                ("data", self.web_api_get_data, ["GET", "OPTIONS"]),
+                ("sync", self.web_api_sync, ["POST", "GET", "OPTIONS"]),
+                ("db/remove_app", self.web_api_remove_app, ["POST", "GET", "OPTIONS"]),
+                ("db/reset_snapshots", self.web_api_reset_snapshots, ["POST", "GET", "OPTIONS"]),
+                # Absolute & alias routes
+                ("/data", self.web_api_get_data, ["GET", "OPTIONS"]),
+                ("/api/data", self.web_api_get_data, ["GET", "OPTIONS"]),
+                ("/astrbot_plugin_steam_family/data", self.web_api_get_data, ["GET", "OPTIONS"]),
                 (
-                    "/astrbot_plugin_steam_family/api/db/remove_app",
-                    self.web_api_remove_app,
-                    ["POST", "GET"],
+                    "/astrbot_plugin_steam_family/api/data",
+                    self.web_api_get_data,
+                    ["GET", "OPTIONS"],
                 ),
+                ("/sync", self.web_api_sync, ["POST", "GET", "OPTIONS"]),
+                ("/api/sync", self.web_api_sync, ["POST", "GET", "OPTIONS"]),
+                (
+                    "/astrbot_plugin_steam_family/sync",
+                    self.web_api_sync,
+                    ["POST", "GET", "OPTIONS"],
+                ),
+                (
+                    "/astrbot_plugin_steam_family/api/sync",
+                    self.web_api_sync,
+                    ["POST", "GET", "OPTIONS"],
+                ),
+                ("/db/remove_app", self.web_api_remove_app, ["POST", "GET", "OPTIONS"]),
+                ("/api/db/remove_app", self.web_api_remove_app, ["POST", "GET", "OPTIONS"]),
                 (
                     "/astrbot_plugin_steam_family/db/remove_app",
                     self.web_api_remove_app,
-                    ["POST", "GET"],
+                    ["POST", "GET", "OPTIONS"],
                 ),
-                ("/api/db/remove_app", self.web_api_remove_app, ["POST", "GET"]),
                 (
-                    "/astrbot_plugin_steam_family/api/db/reset_snapshots",
+                    "/astrbot_plugin_steam_family/api/db/remove_app",
+                    self.web_api_remove_app,
+                    ["POST", "GET", "OPTIONS"],
+                ),
+                ("/db/reset_snapshots", self.web_api_reset_snapshots, ["POST", "GET", "OPTIONS"]),
+                (
+                    "/api/db/reset_snapshots",
                     self.web_api_reset_snapshots,
-                    ["POST", "GET"],
+                    ["POST", "GET", "OPTIONS"],
                 ),
                 (
                     "/astrbot_plugin_steam_family/db/reset_snapshots",
                     self.web_api_reset_snapshots,
-                    ["POST", "GET"],
+                    ["POST", "GET", "OPTIONS"],
                 ),
-                ("/api/db/reset_snapshots", self.web_api_reset_snapshots, ["POST", "GET"]),
+                (
+                    "/astrbot_plugin_steam_family/api/db/reset_snapshots",
+                    self.web_api_reset_snapshots,
+                    ["POST", "GET", "OPTIONS"],
+                ),
             ]
             for route_path, handler, methods in routes:
                 try:
@@ -216,12 +275,12 @@ class SteamFamilyPlugin(Star):
 
     async def web_api_get_data(self, *args, **kwargs):
         data = await self.storage.get_dashboard_data()
-        return json_response(data)
+        return make_cors_response(data)
 
     async def web_api_sync(self, *args, **kwargs):
         msg = await self._check_and_notify()
         success = not msg.startswith("❌") and not msg.startswith("⚠️")
-        return json_response({"success": success, "message": msg})
+        return make_cors_response({"success": success, "message": msg})
 
     async def web_api_remove_app(self, *args, **kwargs):
         appid = 0
@@ -242,7 +301,7 @@ class SteamFamilyPlugin(Star):
             appid = int(appid_str) if str(appid_str).isdigit() else 0
 
         ok = await self.storage.remove_app_from_latest_snapshot(appid) if appid > 0 else False
-        return json_response(
+        return make_cors_response(
             {
                 "success": ok,
                 "message": f"已从当前快照中移出 AppID {appid}" if ok else "未能找到该游戏快照",
@@ -251,7 +310,7 @@ class SteamFamilyPlugin(Star):
 
     async def web_api_reset_snapshots(self, *args, **kwargs):
         await self.storage.reset_snapshots()
-        return json_response({"success": True, "message": "本地快照数据库已成功重置"})
+        return make_cors_response({"success": True, "message": "本地快照数据库已成功重置"})
 
     def _refresh_config(self):
         """Dynamically reload config from AstrBotConfig or context."""
@@ -356,7 +415,7 @@ class SteamFamilyPlugin(Star):
                     self.config.access_token, self.config.steam_id
                 )
                 if not group_id:
-                    return f"⚠️ 无法获取家庭组 ID。该账号 ({self.config.steam_id}) 可能未加入任何 Steam 家庭组，或 Token权限不足。"
+                    return f"⚠️ 无法获取家庭组 ID。该账号 ({self.config.steam_id}) 可能未加入任何 Steam 家庭组，或 Token 权限不足。"
                 self.config.family_group_id = group_id
                 logger.info(f"Detected family group id: {group_id}")
 
