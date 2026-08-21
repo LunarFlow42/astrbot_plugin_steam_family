@@ -25,26 +25,26 @@ async def test_filter_non_games():
                 {
                     "appid": 100,
                     "name": "Valid Game",
-                    "owner_steamids": ["123"],
-                    "app_type": 1,
+                    "ownerSteamids": ["123"],
+                    "appType": 1,
                 },
                 {
                     "appid": 101,
                     "name": "Palworld Dedicated Server",
-                    "owner_steamids": ["123"],
+                    "ownerSteamids": ["123"],
                     "is_free": True,
                 },
                 {
                     "appid": 102,
                     "name": "Cyberpunk 2077 Soundtrack",
-                    "owner_steamids": ["123"],
+                    "ownerSteamids": ["123"],
                     "is_free": True,
                 },
                 {
                     "appid": 103,
                     "name": "Excluded Game",
-                    "owner_steamids": ["123"],
-                    "exclude_reason": 1,
+                    "ownerSteamids": ["123"],
+                    "excludeReason": 1,
                 },
             ]
         }
