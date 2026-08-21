@@ -163,6 +163,7 @@ class SteamFamilyPlugin(Star):
                     port=self.config.dashboard_port,
                     storage=self.storage,
                     renderer=self.renderer,
+                    sync_callback=self._check_and_notify,
                 )
                 await self.web_server.start()
 
