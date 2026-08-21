@@ -29,6 +29,8 @@ class FamilyStorage:
     async def init_db(self):
         """初始化 SQLite 数据库表结构。"""
         async with self._get_conn() as db:
+            await db.execute("PRAGMA journal_mode = WAL;")
+            await db.execute("PRAGMA synchronous = NORMAL;")
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS subscriptions (
                     target_id TEXT PRIMARY KEY,

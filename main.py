@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from pathlib import Path
 
 try:
@@ -208,6 +209,7 @@ class SteamFamilyPlugin(Star):
         self.agent_tools = SteamAgentTools(self.storage)
         self._polling_task: asyncio.Task | None = None
         self._warmup_task: asyncio.Task | None = None
+        self._cookie_refresh_cooldown_until: float = 0.0
 
         # Register AstrBot Web APIs for embedded Plugin Pages
         self._register_astrbot_web_apis()
@@ -299,6 +301,7 @@ class SteamFamilyPlugin(Star):
             "remaining_hours": jwt_info.get("remaining_hours", 0.0) if jwt_info else 0.0,
             "steamid": jwt_info.get("steamid", "") if jwt_info else "",
             "has_cookie_autorenew": bool(self.config.cookie),
+            "cookie_cooling": time.time() < self._cookie_refresh_cooldown_until,
         }
         return make_cors_response(data)
 
@@ -516,21 +519,31 @@ class SteamFamilyPlugin(Star):
 
         # 1. Proactive JWT decoding & Cookie auto-refresh (<1h remaining)
         jwt_info = decode_steam_jwt(self.config.access_token)
-        if self.config.cookie and (
+        need_refresh = self.config.cookie and (
             not self.config.access_token
             or not jwt_info
             or jwt_info.get("remaining_seconds", 0) < 3600
-        ):
-            logger.info(
-                "Access Token is missing, expired, or expiring soon (<1h). Proactively refreshing via Cookie..."
-            )
-            new_token = await self.client.refresh_token_via_cookie(self.config.cookie)
-            if new_token:
-                self.config.access_token = new_token
-                jwt_info = decode_steam_jwt(new_token)
-                logger.info("Successfully refreshed Access Token via Cookie.")
-            elif not self.config.access_token or (jwt_info and jwt_info.get("is_expired")):
-                return "⚠️ Steam Access Token 已失效且 Cookie 自动刷新失败，请检查 Cookie 有效性或在 WebUI 填入最新 Token！"
+        )
+        if need_refresh:
+            if time.time() < self._cookie_refresh_cooldown_until:
+                logger.debug("Cookie 刷新处于退避冷却期中，暂缓重试。")
+            else:
+                logger.info(
+                    "Access Token is missing, expired, or expiring soon (<1h). Proactively refreshing via Cookie..."
+                )
+                new_token = await self.client.refresh_token_via_cookie(self.config.cookie)
+                if new_token:
+                    self.config.access_token = new_token
+                    self._cookie_refresh_cooldown_until = 0.0
+                    jwt_info = decode_steam_jwt(new_token)
+                    logger.info("Successfully refreshed Access Token via Cookie.")
+                else:
+                    self._cookie_refresh_cooldown_until = time.time() + 900.0  # 15 minutes backoff
+                    logger.warning(
+                        "Cookie 自动刷新 Access Token 失败（可能 Cookie 已过期或被 Steam 拦截）。已设置 15 分钟退避冷却。"
+                    )
+                    if not self.config.access_token or (jwt_info and jwt_info.get("is_expired")):
+                        return "⚠️ Steam Access Token 已失效且 Cookie 自动刷新失败，请检查 Cookie 有效性或在 WebUI 填入最新 Token！"
 
         if not self.config.access_token and not self.config.cookie:
             return "⚠️ 未检测到有效配置：未填写 Steam Access Token 或 Cookie，请在 WebUI 设置或使用 /steam_bind 绑定。"

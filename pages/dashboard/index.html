@@ -140,6 +140,15 @@
     .toast.show { transform: translateY(0); }
     .toast.success { border-color: var(--steam-green); }
     .toast.error { border-color: var(--accent-rose); }
+
+    /* Responsive Mobile Media Queries */
+    @media (max-width: 768px) {
+      .top-nav { flex-direction: column; align-items: stretch; gap: 12px; }
+      .nav-tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; padding-bottom: 6px; }
+      .nav-tab-btn { flex-shrink: 0; white-space: nowrap; }
+      .stat-cards { grid-template-columns: 1fr; }
+      .brand { justify-content: space-between; }
+    }
   </style>
 </head>
 <body>
