@@ -127,7 +127,28 @@ class FamilyStorage:
             data = json.loads(raw_json)
             result = {}
             for item in data:
-                app = SharedApp(**item)
+                rt_acq = (
+                    item.get("rt_time_acquired")
+                    or item.get("rtTimeAcquired")
+                    or item.get("rt_time_created")
+                    or 0
+                )
+                app = SharedApp(
+                    appid=int(item.get("appid", 0)),
+                    name=str(item.get("name", "")),
+                    owner_steamids=[
+                        str(x)
+                        for x in (item.get("owner_steamids") or item.get("ownerSteamids") or [])
+                    ],
+                    exclude_reason=int(
+                        item.get("exclude_reason") or item.get("excludeReason") or 0
+                    ),
+                    app_type=int(item.get("app_type") or item.get("appType") or 1),
+                    rt_time_acquired=int(rt_acq),
+                    rt_last_played=int(item.get("rt_last_played") or item.get("rtLastPlayed") or 0),
+                    rt_playtime=int(item.get("rt_playtime") or item.get("rtPlaytime") or 0),
+                    img_icon_hash=str(item.get("img_icon_hash") or item.get("imgIconHash") or ""),
+                )
                 result[app.appid] = app
             return result
 
@@ -322,7 +343,7 @@ class FamilyStorage:
         if snapshot:
             sorted_apps = sorted(
                 snapshot.values(),
-                key=lambda a: (getattr(a, "rt_time_acquired", 0), a.appid),
+                key=lambda a: (int(getattr(a, "rt_time_acquired", 0) or 0), a.appid),
                 reverse=True,
             )
             for app in sorted_apps:
@@ -354,7 +375,10 @@ class FamilyStorage:
                 all_snapshot_apps.append(
                     {
                         "appid": app.appid,
-                        "name": detail.chinese_name or detail.name if detail else app.name,
+                        "name": (
+                            detail.chinese_name if detail and detail.chinese_name else app.name
+                        )
+                        or app.name,
                         "original_name": app.name,
                         "header_image": detail.header_image
                         if detail
@@ -371,7 +395,10 @@ class FamilyStorage:
                         "review_summary": detail.review_summary if detail else "好评",
                         "genres": genres,
                         "categories": cats,
-                        "rt_time_acquired": getattr(app, "rt_time_acquired", 0),
+                        "rt_time_acquired": int(getattr(app, "rt_time_acquired", 0) or 0),
+                        "rt_last_played": int(getattr(app, "rt_last_played", 0) or 0),
+                        "rt_playtime": int(getattr(app, "rt_playtime", 0) or 0),
+                        "img_icon_hash": getattr(app, "img_icon_hash", ""),
                     }
                 )
 
