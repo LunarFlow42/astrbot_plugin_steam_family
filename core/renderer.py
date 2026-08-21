@@ -16,6 +16,13 @@ class CardRenderer:
         self._browser = None
         self._playwright = None
 
+    def get_template_source(self, template_name: str = "game_card.html") -> str:
+        """获取 Jinja2 原始模板字符串。"""
+        tmpl_file = self.template_dir / template_name
+        if tmpl_file.exists():
+            return tmpl_file.read_text(encoding="utf-8")
+        return ""
+
     def render_html(self, data: dict[str, Any], template_name: str = "game_card.html") -> str:
         template = self.env.get_template(template_name)
         return template.render(**data)

@@ -24,6 +24,12 @@ except ImportError:
         def register_web_api(self, *args, **kwargs):
             pass
 
+        async def get_current_chat_provider_id(self, *args, **kwargs):
+            return None
+
+        async def llm_generate(self, *args, **kwargs):
+            return "Mock AI response"
+
     def register(*args, **kwargs):
         return lambda cls: cls
 
@@ -42,6 +48,9 @@ except ImportError:
         def plain_result(self, text):
             return text
 
+        def image_result(self, url):
+            return url
+
     class MessageChain:
         def __init__(self, *args, **kwargs):
             pass
@@ -59,6 +68,10 @@ except ImportError:
             @staticmethod
             def fromBytes(b):
                 return b
+
+            @staticmethod
+            def fromURL(url):
+                return url
 
     AstrBotConfig = dict
 
@@ -242,6 +255,31 @@ class SteamFamilyPlugin(Star):
             except Exception as e:
                 logger.debug(f"Detail warmup skipped for app {app.appid}: {e}")
 
+    async def _render_card_image(self, card_data: dict) -> bytes | str | None:
+        """
+        利用 AstrBot 原生 self.html_render 或内部 Playwright 渲染高质量游戏卡片。
+        """
+        if not self.config.enable_render_card:
+            return None
+
+        # 优先调用 AstrBot Star 原生自带的 html_render
+        if hasattr(self, "html_render"):
+            try:
+                tmpl = self.renderer.get_template_source("game_card.html")
+                if tmpl:
+                    url = await self.html_render(
+                        tmpl,
+                        card_data,
+                        options={"type": "png", "omit_background": False},
+                    )
+                    if url:
+                        return url
+            except Exception as ex:
+                logger.debug(f"AstrBot Star.html_render fallback to internal renderer: {ex}")
+
+        # 降级使用内部 Playwright 渲染
+        return await self.renderer.render_game_card(card_data)
+
     async def _check_and_notify(self) -> str:
         self._refresh_config()
         logger.info(
@@ -323,7 +361,7 @@ class SteamFamilyPlugin(Star):
                 if details:
                     await self.storage.cache_app_details(details)
 
-                # Render card if enabled
+                # Render card
                 card_data = {
                     "appid": app.appid,
                     "game_name": details.chinese_name if details else app.name,
@@ -342,23 +380,25 @@ class SteamFamilyPlugin(Star):
                     "genres": details.genres if details else ["Steam 共享"],
                 }
 
-                card_bytes = None
-                if self.config.enable_render_card:
-                    card_bytes = await self.renderer.render_game_card(card_data)
+                rendered_image = await self._render_card_image(card_data)
 
                 # Broadcast to subscribers
                 for target_id in subscribers:
                     try:
-                        if card_bytes and hasattr(self.context, "send_message"):
-                            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
-                                tf.write(card_bytes)
-                                temp_path = tf.name
-                            chain = MessageChain([Comp.Image.fromFileSystem(temp_path)])
+                        if rendered_image and hasattr(self.context, "send_message"):
+                            if isinstance(rendered_image, str):
+                                chain = MessageChain([Comp.Image.fromURL(rendered_image)])
+                            else:
+                                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+                                    tf.write(rendered_image)
+                                    temp_path = tf.name
+                                chain = MessageChain([Comp.Image.fromFileSystem(temp_path)])
                             await self.context.send_message(target_id, chain)
-                            try:
-                                os.remove(temp_path)
-                            except Exception:
-                                pass
+                            if not isinstance(rendered_image, str):
+                                try:
+                                    os.remove(temp_path)
+                                except Exception:
+                                    pass
                         elif hasattr(self.context, "send_message"):
                             msg = f"✨ 【Steam 家庭库新游戏入库】\n🎮 《{card_data['game_name']}》\n👑 入库义父: {card_data['owner_name']}\n💰 价格: {card_data['final_price']}"
                             chain = MessageChain([Comp.Plain(msg)])
@@ -447,6 +487,50 @@ class SteamFamilyPlugin(Star):
         result = await self.agent_tools.find_coop_games(ids)
         yield event.plain_result(result)
 
+    @filter.command("steam_ai", alias={"steam ai", "steam推荐", "steam找游戏"})
+    async def cmd_ai(self, event: AstrMessageEvent, query: str = ""):
+        """利用 AstrBot 原生 LLM 进行智能家庭库游戏推荐与专家问答。例: /steam_ai 推荐两款50元内治愈系解谜"""
+        if not query.strip():
+            yield event.plain_result(
+                "💡 请提供你想询问的游戏需求，例如：/steam_ai 推荐两款评分高于90分的肉鸽游戏"
+            )
+            return
+
+        umo = getattr(event, "unified_msg_origin", None)
+        yield event.plain_result("🤔 Steam 家庭管家正在调取库内数据并思考中，请稍候...")
+        try:
+            cached_apps = await self.storage.get_all_cached_apps()
+            app_summaries = [
+                f"《{a.chinese_name or a.name}》(原价¥{a.initial_price},现价¥{a.final_price},好评率{a.positive_rate}%,标签:{','.join(a.genres)})"
+                for a in cached_apps[:60]
+            ]
+            library_context = "\n".join(app_summaries) if app_summaries else "暂无游戏缓存数据"
+            system_prompt = (
+                "你是一个幽默风趣、见多识广的 Steam 资深游戏专家与家庭库管家。"
+                "你的任务是根据用户提供的家庭库已有游戏信息及用户具体需求，向用户做出精彩、精准的游戏推荐与分析。"
+                f"当前家庭库中部分代表性游戏如下：\n{library_context}"
+            )
+
+            if (
+                umo
+                and hasattr(self.context, "get_current_chat_provider_id")
+                and hasattr(self.context, "llm_generate")
+            ):
+                prov_id = await self.context.get_current_chat_provider_id(umo)
+                llm_resp = await self.context.llm_generate(
+                    chat_provider_id=prov_id,
+                    prompt=query,
+                    system_prompt=system_prompt,
+                )
+                reply_text = getattr(llm_resp, "completion_text", str(llm_resp))
+                yield event.plain_result(reply_text)
+            else:
+                reply_text = await self.agent_tools.query_family_games(keyword=query)
+                yield event.plain_result(reply_text)
+        except Exception as ex:
+            logger.error(f"Error in steam_ai command: {ex}")
+            yield event.plain_result(f"❌ AI 推荐思考出现异常: {ex}")
+
     @filter.command(
         "steam_dashboard",
         alias={"steam dashboard", "steam大盘", "steam看板"},
@@ -469,6 +553,7 @@ class SteamFamilyPlugin(Star):
             "• /steam_rank 或 /steam rank - 查看家庭组义父资产贡献榜\n"
             "• /steam_roll [标签] - 赛博轮盘随机抽取游戏\n"
             "• /steam_coop <SteamID...> - 开黑车队雷达 (计算共有游戏)\n"
+            "• /steam_ai <需求> - 专属 LLM 游戏专家智能推荐\n"
             "• /steam_dashboard - 查看 Web 看板开启指引\n"
             "• /steam_bind <Token> <SteamID> - 重新绑定鉴权凭据"
         )

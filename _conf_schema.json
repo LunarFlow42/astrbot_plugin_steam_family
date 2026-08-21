@@ -3,18 +3,21 @@
     "description": "Steam 网页端 Access Token",
     "type": "string",
     "hint": "【方式1·快捷填写】点击打开链接：https://store.steampowered.com/pointssummary/ajaxgetasyncconfig ，复制 webapi_token 冒号后面的那串字符串",
+    "obvious_hint": true,
     "default": ""
   },
   "cookie": {
     "description": "Steam Cookie (全自动永久保活可选)",
     "type": "string",
     "hint": "【方式2·永久免维护】填入 steamLoginSecure 或完整 Cookie，插件将在 Token 过期时全自动静默刷新，永久保活！",
+    "obvious_hint": true,
     "default": ""
   },
   "steam_id": {
     "description": "绑定的 64 位 SteamID (17位纯数字)",
     "type": "string",
     "hint": "【直达链接】打开 https://store.steampowered.com/account/ 页面最上方直接显示你的 17 位 Steam ID (例如 76561198xxxxxxxx)",
+    "obvious_hint": true,
     "default": ""
   },
   "family_group_id": {
@@ -44,7 +47,7 @@
   "enable_render_card": {
     "description": "启用精美 HTML 游戏卡片图片渲染",
     "type": "bool",
-    "hint": "开启后新游戏变动将调用 Playwright 渲染高质量卡片，关闭则发送文字",
+    "hint": "开启后新游戏变动将调用 AstrBot 原生 html_render / Playwright 渲染高质量卡片，关闭则发送文字",
     "default": true
   },
   "filter_non_games": {
