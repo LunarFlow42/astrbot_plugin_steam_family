@@ -172,34 +172,47 @@ class SteamFamilyPlugin(Star):
     def _register_astrbot_web_apis(self):
         """Register Web APIs for AstrBot WebUI Plugin Page integration."""
         if hasattr(self.context, "register_web_api"):
-            try:
-                self.context.register_web_api(
-                    "/astrbot_plugin_steam_family/api/data",
-                    self.web_api_get_data,
-                    ["GET"],
-                    "获取 Steam 家庭资产大盘全量数据",
-                )
-                self.context.register_web_api(
-                    "/astrbot_plugin_steam_family/api/sync",
-                    self.web_api_sync,
-                    ["POST", "GET"],
-                    "手动触发家庭库同步与推送",
-                )
-                self.context.register_web_api(
+            routes = [
+                ("/astrbot_plugin_steam_family/api/data", self.web_api_get_data, ["GET"]),
+                ("/astrbot_plugin_steam_family/data", self.web_api_get_data, ["GET"]),
+                ("/api/data", self.web_api_get_data, ["GET"]),
+                ("/astrbot_plugin_steam_family/api/sync", self.web_api_sync, ["POST", "GET"]),
+                ("/astrbot_plugin_steam_family/sync", self.web_api_sync, ["POST", "GET"]),
+                ("/api/sync", self.web_api_sync, ["POST", "GET"]),
+                (
                     "/astrbot_plugin_steam_family/api/db/remove_app",
                     self.web_api_remove_app,
                     ["POST", "GET"],
-                    "从快照中移出指定游戏（测试新游戏入库推送）",
-                )
-                self.context.register_web_api(
+                ),
+                (
+                    "/astrbot_plugin_steam_family/db/remove_app",
+                    self.web_api_remove_app,
+                    ["POST", "GET"],
+                ),
+                ("/api/db/remove_app", self.web_api_remove_app, ["POST", "GET"]),
+                (
                     "/astrbot_plugin_steam_family/api/db/reset_snapshots",
                     self.web_api_reset_snapshots,
                     ["POST", "GET"],
-                    "重置清空快照数据库",
-                )
-                logger.info("Successfully registered AstrBot Web APIs for Plugin Pages.")
-            except Exception as e:
-                logger.warning(f"Failed to register AstrBot Web APIs: {e}")
+                ),
+                (
+                    "/astrbot_plugin_steam_family/db/reset_snapshots",
+                    self.web_api_reset_snapshots,
+                    ["POST", "GET"],
+                ),
+                ("/api/db/reset_snapshots", self.web_api_reset_snapshots, ["POST", "GET"]),
+            ]
+            for route_path, handler, methods in routes:
+                try:
+                    self.context.register_web_api(
+                        route_path,
+                        handler,
+                        methods,
+                        f"Steam Family API: {route_path}",
+                    )
+                except Exception as e:
+                    logger.debug(f"Route registration notice for {route_path}: {e}")
+            logger.info("Successfully registered AstrBot Web APIs for Plugin Pages.")
 
     async def web_api_get_data(self):
         data = await self.storage.get_dashboard_data()

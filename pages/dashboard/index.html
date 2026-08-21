@@ -175,32 +175,72 @@
   <script>
     let globalSnapshotApps = [];
 
-    // Unified API requester supporting both AstrBotPluginPage Bridge and standalone HTTP fetch
-    async function apiRequest(endpoint, options = {}) {
-      const pluginBase = "/astrbot_plugin_steam_family";
-      const fullRoute = endpoint.startsWith(pluginBase) ? endpoint : `${pluginBase}${endpoint}`;
+    // Helper to safely get the initialized AstrBot bridge
+    async function waitForBridge(maxRetries = 20) {
+      for (let i = 0; i < maxRetries; i++) {
+        if (window.AstrBotPluginPage) {
+          if (typeof window.AstrBotPluginPage.ready === "function") {
+            try {
+              await window.AstrBotPluginPage.ready();
+            } catch (e) {
+              console.warn("Bridge ready() error:", e);
+            }
+          }
+          return window.AstrBotPluginPage;
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return window.AstrBotPluginPage || null;
+    }
+
+    // Unified API requester supporting AstrBotPluginPage (apiGet, apiPost, request)
+    async function apiRequest(endpoint, method = "GET", payload = {}) {
+      const pluginName = "astrbot_plugin_steam_family";
+      const cleanPath = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+      const fullRoute = cleanPath.startsWith(`/${pluginName}`) ? cleanPath : `/${pluginName}${cleanPath}`;
       
-      if (window.AstrBotPluginPage && typeof window.AstrBotPluginPage.request === "function") {
+      const bridge = await waitForBridge();
+      if (bridge) {
         try {
-          const resp = await window.AstrBotPluginPage.request(fullRoute, {
-            method: options.method || "GET",
-            query: options.query || {},
-            body: options.body || {}
-          });
-          return resp && resp.data !== undefined ? resp.data : resp;
-        } catch (e) {
-          console.warn("AstrBotPluginPage bridge call failed, falling back to fetch:", e);
+          if (method === "GET") {
+            if (typeof bridge.apiGet === "function") {
+              const res = await bridge.apiGet(fullRoute, payload);
+              return res && res.data !== undefined ? res.data : res;
+            }
+          } else if (method === "POST") {
+            if (typeof bridge.apiPost === "function") {
+              const res = await bridge.apiPost(fullRoute, payload);
+              return res && res.data !== undefined ? res.data : res;
+            }
+          }
+          if (typeof bridge.request === "function") {
+            const res = await bridge.request(fullRoute, {
+              method: method,
+              query: method === "GET" ? payload : {},
+              body: method !== "GET" ? payload : {}
+            });
+            return res && res.data !== undefined ? res.data : res;
+          }
+        } catch (err) {
+          console.warn(`Bridge call to ${fullRoute} failed:`, err);
         }
       }
 
-      // Standalone direct fetch fallback
-      const url = options.query ? `${endpoint}?${new URLSearchParams(options.query)}` : endpoint;
-      const resp = await fetch(url, {
-        method: options.method || "GET",
-        headers: { "Content-Type": "application/json" },
-        body: options.body ? JSON.stringify(options.body) : undefined
-      });
-      return await resp.json();
+      // Standalone HTTP Fetch fallback (for local development/direct browser preview)
+      try {
+        const url = method === "GET" && Object.keys(payload).length > 0 
+          ? `${fullRoute}?${new URLSearchParams(payload)}` 
+          : fullRoute;
+        const res = await fetch(url, {
+          method: method,
+          headers: { "Content-Type": "application/json" },
+          body: method !== "GET" ? JSON.stringify(payload) : undefined
+        });
+        return await res.json();
+      } catch (fetchErr) {
+        console.error("Direct fetch also failed:", fetchErr);
+        throw new Error("无法连接到后端接口，请确认已在 AstrBot WebUI 插件管理中开启该插件！");
+      }
     }
 
     function showToast(msg, isSuccess = true) {
@@ -215,7 +255,7 @@
 
     async function loadData() {
       try {
-        const data = await apiRequest("/api/data");
+        const data = await apiRequest("/api/data", "GET");
         if (!data) return;
 
         document.getElementById("valTotalGames").innerHTML = `${data.total_games || 0} <span style="font-size: 14px; font-weight: normal; color: #8f98a0;">款</span>`;
@@ -292,7 +332,7 @@
       btn.disabled = true;
       btn.innerHTML = "⏳ 正在同步中...";
       try {
-        const data = await apiRequest("/api/sync", { method: "POST" });
+        const data = await apiRequest("/api/sync", "POST");
         showToast(data.message || "同步完成！", data.success);
         setTimeout(loadData, 1500);
       } catch (err) {
@@ -308,7 +348,7 @@
         return;
       }
       try {
-        const data = await apiRequest(`/api/db/remove_app`, { method: "POST", query: { appid: appid } });
+        const data = await apiRequest(`/api/db/remove_app`, "POST", { appid: appid });
         if (data.success) {
           showToast(`已成功将《${name}》从本地快照中移出！现在点击【立即手动同步】，将立即触发新游戏推送！`, true);
           const row = document.getElementById(`row-${appid}`);
@@ -326,7 +366,7 @@
         return;
       }
       try {
-        const data = await apiRequest("/api/db/reset_snapshots", { method: "POST" });
+        const data = await apiRequest("/api/db/reset_snapshots", "POST");
         showToast(data.message || "快照数据库已重置！", true);
         setTimeout(loadData, 1200);
       } catch (err) {
@@ -345,8 +385,11 @@
       renderDbTable(filtered);
     }
 
-    // Auto-load on startup
-    window.addEventListener("DOMContentLoaded", loadData);
+    // Auto-load once page is ready
+    window.addEventListener("DOMContentLoaded", () => {
+      // Delay slightly for iframe bridge injection
+      setTimeout(loadData, 150);
+    });
   </script>
 </body>
 </html>
