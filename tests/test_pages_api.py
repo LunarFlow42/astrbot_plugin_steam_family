@@ -31,13 +31,14 @@ async def test_plugin_web_apis(tmp_path):
     assert data["total_games"] == 2
     assert len(data["all_snapshot_apps"]) == 2
 
-    # 2. Test web_api_remove_app
-    ok = await plugin.storage.remove_app_from_latest_snapshot(1086940)
-    assert ok is True
+    # 2. Test web_api_remove_app via dict payload
+    resp = await plugin.web_api_remove_app({"appid": 1086940})
+    assert resp["success"] is True
     snap = await plugin.storage.get_latest_snapshot()
     assert 1086940 not in snap
     assert 1091500 in snap
 
     # 3. Test web_api_reset_snapshots
-    await plugin.web_api_reset_snapshots()
+    resp2 = await plugin.web_api_reset_snapshots()
+    assert resp2["success"] is True
     assert await plugin.storage.get_latest_snapshot() is None

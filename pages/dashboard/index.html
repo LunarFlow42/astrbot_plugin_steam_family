@@ -964,8 +964,8 @@
         const data = await apiRequest("db/remove_app", "POST", { appid: appid });
         if (data && data.success !== false) {
           showToast(`已成功将《${name}》从本地快照中移出！现在点击【立即同步】，将立即触发新游戏推送！`, true);
-          const row = document.getElementById(`row-${appid}`);
-          if (row) row.style.display = "none";
+          globalSnapshotApps = globalSnapshotApps.filter(a => a.appid !== appid);
+          filterStudioTable();
         } else {
           showToast((data && data.message) || "操作失败", false);
         }
@@ -981,7 +981,9 @@
       try {
         const data = await apiRequest("db/reset_snapshots", "POST");
         showToast((data && data.message) || "快照数据库已重置！", true);
-        setTimeout(loadData, 1200);
+        globalSnapshotApps = [];
+        renderStudioTable([]);
+        setTimeout(loadData, 500);
       } catch (err) {
         showToast("重置失败: " + err.message, false);
       }

@@ -172,6 +172,8 @@ class FamilyStorage:
             await db.commit()
             return True
 
+    remove_app_from_snapshot = remove_app_from_latest_snapshot
+
     async def reset_snapshots(self):
         """重置清空快照数据库（用于测试首次基线建立）。"""
         async with self._get_conn() as db:

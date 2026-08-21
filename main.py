@@ -310,12 +310,28 @@ class SteamFamilyPlugin(Star):
     async def web_api_remove_app(self, *args, **kwargs):
         appid = 0
         for arg in args:
-            if hasattr(arg, "query_params"):
+            if hasattr(arg, "json"):
+                try:
+                    import inspect
+
+                    if inspect.iscoroutinefunction(arg.json):
+                        body = await arg.json()
+                    else:
+                        body = arg.json()
+                    if isinstance(body, dict) and "appid" in body:
+                        appid = int(body["appid"])
+                except Exception:
+                    pass
+            if not appid and hasattr(arg, "query_params"):
                 val = arg.query_params.get("appid", "0")
                 if str(val).isdigit():
                     appid = int(val)
-            elif isinstance(arg, dict):
+            if not appid and isinstance(arg, dict):
                 val = arg.get("appid", 0)
+                if str(val).isdigit() or isinstance(val, int):
+                    appid = int(val)
+            if not appid and hasattr(arg, "data") and isinstance(arg.data, dict):
+                val = arg.data.get("appid", 0)
                 if str(val).isdigit() or isinstance(val, int):
                     appid = int(val)
         if appid == 0 and "appid" in kwargs:
@@ -331,7 +347,7 @@ class SteamFamilyPlugin(Star):
                 status_code=400,
             )
 
-        success = await self.storage.remove_app_from_snapshot(appid)
+        success = await self.storage.remove_app_from_latest_snapshot(appid)
         if success:
             return make_cors_response(
                 {
