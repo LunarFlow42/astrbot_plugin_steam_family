@@ -225,7 +225,11 @@ class SteamFamilyPlugin(Star):
                 ("data", self.web_api_get_data, ["GET", "OPTIONS"]),
                 ("sync", self.web_api_sync, ["POST", "GET", "OPTIONS"]),
                 ("db/remove_app", self.web_api_remove_app, ["POST", "GET", "OPTIONS"]),
+                ("remove_app", self.web_api_remove_app, ["POST", "GET", "OPTIONS"]),
                 ("db/reset_snapshots", self.web_api_reset_snapshots, ["POST", "GET", "OPTIONS"]),
+                ("reset_snapshots", self.web_api_reset_snapshots, ["POST", "GET", "OPTIONS"]),
+                ("db/reset", self.web_api_reset_snapshots, ["POST", "GET", "OPTIONS"]),
+                ("reset", self.web_api_reset_snapshots, ["POST", "GET", "OPTIONS"]),
                 # Absolute & alias routes
                 ("/data", self.web_api_get_data, ["GET", "OPTIONS"]),
                 ("/api/data", self.web_api_get_data, ["GET", "OPTIONS"]),
@@ -248,6 +252,7 @@ class SteamFamilyPlugin(Star):
                     ["POST", "GET", "OPTIONS"],
                 ),
                 ("/db/remove_app", self.web_api_remove_app, ["POST", "GET", "OPTIONS"]),
+                ("/remove_app", self.web_api_remove_app, ["POST", "GET", "OPTIONS"]),
                 ("/api/db/remove_app", self.web_api_remove_app, ["POST", "GET", "OPTIONS"]),
                 (
                     "/astrbot_plugin_steam_family/db/remove_app",
@@ -260,6 +265,7 @@ class SteamFamilyPlugin(Star):
                     ["POST", "GET", "OPTIONS"],
                 ),
                 ("/db/reset_snapshots", self.web_api_reset_snapshots, ["POST", "GET", "OPTIONS"]),
+                ("/reset_snapshots", self.web_api_reset_snapshots, ["POST", "GET", "OPTIONS"]),
                 (
                     "/api/db/reset_snapshots",
                     self.web_api_reset_snapshots,

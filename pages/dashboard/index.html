@@ -149,6 +149,13 @@
       .stat-cards { grid-template-columns: 1fr; }
       .brand { justify-content: space-between; }
     }
+
+    /* Custom In-Page Modal (Iframe Sandbox Safe) */
+    .custom-modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; z-index: 10000; animation: fadeIn 0.2s ease-out; }
+    .custom-modal-dialog { background: #1b2838; border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 24px; max-width: 480px; width: 90%; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8); color: #fff; }
+    .custom-modal-header { font-size: 18px; font-weight: 700; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .custom-modal-body { font-size: 14px; color: var(--text-muted); line-height: 1.6; margin-bottom: 24px; }
+    .custom-modal-footer { display: flex; justify-content: flex-end; gap: 10px; }
   </style>
 </head>
 <body>
@@ -416,6 +423,18 @@
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- In-Page Custom Modal (Iframe Sandbox Safe) -->
+  <div id="customModal" class="custom-modal-backdrop" style="display: none;">
+    <div class="custom-modal-dialog">
+      <div class="custom-modal-header" id="modalTitle">⚠️ 确认操作</div>
+      <div class="custom-modal-body" id="modalBody">确定要执行此操作吗？</div>
+      <div class="custom-modal-footer">
+        <button class="btn btn-secondary" onclick="closeCustomModal(false)">取消</button>
+        <button id="modalConfirmBtn" class="btn btn-danger" onclick="closeCustomModal(true)">确认执行</button>
       </div>
     </div>
   </div>
@@ -965,10 +984,33 @@
       }
     }
 
-    async function removeApp(appid, name) {
-      if (!confirm(`确定要从当前本地数据库快照中移出《${name}》(AppID: ${appid}) 吗？\n\n移出后点击「立即同步」，插件将检测到此游戏为【全新入库游戏】，并自动触发卡片渲染和消息推送！`)) {
-        return;
+    let modalResolve = null;
+    function showConfirmModal(title, message, isDanger = true) {
+      return new Promise((resolve) => {
+        modalResolve = resolve;
+        document.getElementById("modalTitle").innerText = title;
+        document.getElementById("modalBody").innerHTML = message.replace(/\n/g, "<br>");
+        const confirmBtn = document.getElementById("modalConfirmBtn");
+        confirmBtn.className = isDanger ? "btn btn-danger" : "btn btn-primary";
+        document.getElementById("customModal").style.display = "flex";
+      });
+    }
+
+    function closeCustomModal(result) {
+      document.getElementById("customModal").style.display = "none";
+      if (modalResolve) {
+        modalResolve(result);
+        modalResolve = null;
       }
+    }
+
+    async function removeApp(appid, name) {
+      const confirmed = await showConfirmModal(
+        "🗑️ 移出游戏确认",
+        `确定要从当前本地数据库快照中移出《${name}》(AppID: ${appid}) 吗？\n\n移出后点击「立即同步」，插件将检测到此游戏为【全新入库游戏】，并自动触发卡片渲染和消息推送！`,
+        true
+      );
+      if (!confirmed) return;
       try {
         const data = await apiRequest("db/remove_app", "POST", { appid: appid });
         if (data && data.success !== false) {
@@ -984,13 +1026,18 @@
     }
 
     async function resetDatabase() {
-      if (!confirm("⚠️ 确定要清空/重置本地快照数据库吗？\n\n清空后下次同步将重新建立初始基线快照。")) {
-        return;
-      }
+      const confirmed = await showConfirmModal(
+        "🧹 重置快照数据库",
+        "⚠️ 确定要清空/重置本地快照数据库吗？\n\n清空后下次同步将重新建立初始基线快照。",
+        true
+      );
+      if (!confirmed) return;
       try {
         const data = await apiRequest("db/reset_snapshots", "POST");
         showToast((data && data.message) || "快照数据库已重置！", true);
         globalSnapshotApps = [];
+        globalData = { total_games: 0, all_snapshot_apps: [], rankings: [], recent_games: [] };
+        renderOverview(globalData);
         renderStudioTable([]);
         setTimeout(loadData, 500);
       } catch (err) {
