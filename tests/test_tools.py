@@ -1,7 +1,9 @@
 import pytest
-from core.storage import FamilyStorage
-from core.steam_api import SharedApp, AppDetails
+
 from agent.tools import SteamAgentTools
+from core.steam_api import AppDetails, SharedApp
+from core.storage import FamilyStorage
+
 
 @pytest.mark.asyncio
 async def test_agent_tools_queries(tmp_path):
@@ -10,18 +12,20 @@ async def test_agent_tools_queries(tmp_path):
 
     app1 = SharedApp(appid=1086940, name="Baldur's Gate 3", owner_steamids=["76561198000000001"])
     await storage.save_snapshot([app1])
-    await storage.cache_app_details(AppDetails(
-        appid=1086940,
-        name="Baldur's Gate 3",
-        chinese_name="博德之门3",
-        genres=["RPG", "奇幻"],
-        initial_price=298.0,
-        final_price=298.0,
-        positive_rate=96
-    ))
+    await storage.cache_app_details(
+        AppDetails(
+            appid=1086940,
+            name="Baldur's Gate 3",
+            chinese_name="博德之门3",
+            genres=["RPG", "奇幻"],
+            initial_price=298.0,
+            final_price=298.0,
+            positive_rate=96,
+        )
+    )
 
     tools = SteamAgentTools(storage)
-    
+
     # Query search
     res = await tools.query_family_games(keyword="博德之门")
     assert "博德之门3" in res

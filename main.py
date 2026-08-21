@@ -2,75 +2,96 @@ import asyncio
 import logging
 import os
 import tempfile
-from typing import Any
 
 try:
-    from astrbot.api.star import Star, register, Context
-    from astrbot.api.event import filter, AstrMessageEvent, MessageChain
     import astrbot.api.message_components as Comp
     from astrbot.api import AstrBotConfig
+    from astrbot.api.event import AstrMessageEvent, MessageChain, filter
+    from astrbot.api.star import Context, Star, register
 except ImportError:
+
     class Star:
         def __init__(self, context):
             self.context = context
+
     class Context:
         def get_config(self):
             return {}
+
         async def send_message(self, *args, **kwargs):
             pass
+
     def register(*args, **kwargs):
         return lambda cls: cls
+
     class filter:
         @staticmethod
         def command(*args, **kwargs):
             return lambda f: f
+
         @staticmethod
         def llm_tool(*args, **kwargs):
             return lambda f: f
+
     class AstrMessageEvent:
         unified_msg_origin = "test_umo"
+
         def plain_result(self, text):
             return text
+
     class MessageChain:
         def __init__(self, *args, **kwargs):
             pass
+
     class Comp:
         class Plain:
             def __init__(self, text):
                 pass
+
         class Image:
             @staticmethod
             def fromFileSystem(path):
                 return path
+
             @staticmethod
             def fromBytes(b):
                 return b
+
     AstrBotConfig = dict
 
 try:
+    from .agent.tools import SteamAgentTools
     from .config import PluginConfig
-    from .core.steam_api import SteamFamilyClient, SteamAuthExpiredError, SteamRateLimitError
-    from .core.storage import FamilyStorage
     from .core.diff_engine import FamilyDiffEngine
     from .core.renderer import CardRenderer
+    from .core.steam_api import (
+        SteamAuthExpiredError,
+        SteamFamilyClient,
+        SteamRateLimitError,
+    )
+    from .core.storage import FamilyStorage
     from .core.web_server import DashboardWebServer
-    from .agent.tools import SteamAgentTools
 except (ImportError, ValueError):
+    from agent.tools import SteamAgentTools
     from config import PluginConfig
-    from core.steam_api import SteamFamilyClient, SteamAuthExpiredError, SteamRateLimitError
-    from core.storage import FamilyStorage
     from core.diff_engine import FamilyDiffEngine
     from core.renderer import CardRenderer
+    from core.steam_api import (
+        SteamAuthExpiredError,
+        SteamFamilyClient,
+        SteamRateLimitError,
+    )
+    from core.storage import FamilyStorage
     from core.web_server import DashboardWebServer
-    from agent.tools import SteamAgentTools
 
 logger = logging.getLogger(__name__)
+
 
 @register(
     "astrbot_plugin_steam_family",
     "LunarFlow42",
     "Steam 家庭资产监控与智能管家插件（支持卡片推送、义父榜与 LLM 找游戏）",
-    "0.1.0"
+    "0.1.0",
 )
 class SteamFamilyPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig | dict | None = None):
@@ -81,11 +102,17 @@ class SteamFamilyPlugin(Star):
                 raw_config = context.get_config()
             except Exception:
                 raw_config = {}
-        
-        self.raw_astr_config = config if isinstance(config, AstrBotConfig) else None
-        self.config = PluginConfig(**raw_config) if isinstance(raw_config, dict) and raw_config else PluginConfig()
 
-        self.client = SteamFamilyClient(proxy=self.config.proxy, timeout=self.config.request_timeout)
+        self.raw_astr_config = config if isinstance(config, AstrBotConfig) else None
+        self.config = (
+            PluginConfig(**raw_config)
+            if isinstance(raw_config, dict) and raw_config
+            else PluginConfig()
+        )
+
+        self.client = SteamFamilyClient(
+            proxy=self.config.proxy, timeout=self.config.request_timeout
+        )
         self.storage = FamilyStorage("data/steam_family.db")
         self.diff_engine = FamilyDiffEngine()
         self.renderer = CardRenderer()
@@ -109,8 +136,13 @@ class SteamFamilyPlugin(Star):
 
         if isinstance(raw, dict) and raw:
             self.config = PluginConfig(**raw)
-            if self.client.proxy != self.config.proxy or self.client.timeout != self.config.request_timeout:
-                self.client = SteamFamilyClient(proxy=self.config.proxy, timeout=self.config.request_timeout)
+            if (
+                self.client.proxy != self.config.proxy
+                or self.client.timeout != self.config.request_timeout
+            ):
+                self.client = SteamFamilyClient(
+                    proxy=self.config.proxy, timeout=self.config.request_timeout
+                )
 
     async def _init_and_start_polling(self):
         try:
@@ -130,7 +162,7 @@ class SteamFamilyPlugin(Star):
                     host=self.config.dashboard_host,
                     port=self.config.dashboard_port,
                     storage=self.storage,
-                    renderer=self.renderer
+                    renderer=self.renderer,
                 )
                 await self.web_server.start()
 
@@ -157,11 +189,13 @@ class SteamFamilyPlugin(Star):
 
     async def _check_and_notify(self) -> str:
         self._refresh_config()
-        logger.info(f"Checking Steam Family. Token present: {bool(self.config.access_token)}, Cookie present: {bool(self.config.cookie)}, SteamID: {self.config.steam_id}")
+        logger.info(
+            f"Checking Steam Family. Token present: {bool(self.config.access_token)}, Cookie present: {bool(self.config.cookie)}, SteamID: {self.config.steam_id}"
+        )
 
         if not self.config.access_token and not self.config.cookie:
             return "⚠️ 未检测到有效配置：未填写 Steam Access Token 或 Cookie，请在 WebUI 设置或使用 /steam_bind 绑定。"
-        
+
         if not self.config.steam_id:
             return "⚠️ 未检测到配置：未填写 17 位 SteamID，请在 WebUI 中填入你的 Steam 64 位 ID。"
 
@@ -177,7 +211,9 @@ class SteamFamilyPlugin(Star):
             group_id = self.config.family_group_id
             if not group_id:
                 logger.info(f"Fetching family group id for SteamID {self.config.steam_id}...")
-                group_id = await self.client.get_family_group_id(self.config.access_token, self.config.steam_id)
+                group_id = await self.client.get_family_group_id(
+                    self.config.access_token, self.config.steam_id
+                )
                 if not group_id:
                     return f"⚠️ 无法获取家庭组 ID。该账号 ({self.config.steam_id}) 可能未加入任何 Steam 家庭组，或 Token 权限不足。"
                 self.config.family_group_id = group_id
@@ -186,7 +222,9 @@ class SteamFamilyPlugin(Star):
             logger.info(f"Fetching shared library apps for group {group_id}...")
             try:
                 current_apps = await self.client.get_shared_library(
-                    group_id, self.config.access_token, filter_non_games=self.config.filter_non_games
+                    group_id,
+                    self.config.access_token,
+                    filter_non_games=self.config.filter_non_games,
                 )
             except SteamAuthExpiredError:
                 if self.config.cookie:
@@ -195,7 +233,9 @@ class SteamFamilyPlugin(Star):
                     if new_token:
                         self.config.access_token = new_token
                         current_apps = await self.client.get_shared_library(
-                            group_id, self.config.access_token, filter_non_games=self.config.filter_non_games
+                            group_id,
+                            self.config.access_token,
+                            filter_non_games=self.config.filter_non_games,
                         )
                     else:
                         return "⚠️ Steam Access Token 已失效且 Cookie 刷新失败，请重新获取 Token！"
@@ -217,7 +257,9 @@ class SteamFamilyPlugin(Star):
                 return f"🎉 首次同步成功！已成功建立家庭库基线数据，共同步【{len(current_apps)}】款游戏！\n📊 资产大盘已实时生成，请访问 Web 看板查看。"
 
             if not diff.has_changes:
-                return f"✅ 家庭库检查完成：当前库内共有 {len(current_apps)} 款游戏，暂无新游戏变动。"
+                return (
+                    f"✅ 家庭库检查完成：当前库内共有 {len(current_apps)} 款游戏，暂无新游戏变动。"
+                )
 
             # Process added games and broadcast
             subscribers = await self.storage.get_subscribers()
@@ -225,20 +267,24 @@ class SteamFamilyPlugin(Star):
                 details = await self.client.get_app_details(app.appid)
                 if details:
                     await self.storage.cache_app_details(details)
-                
+
                 # Render card if enabled
                 card_data = {
                     "appid": app.appid,
                     "game_name": details.chinese_name if details else app.name,
                     "original_name": app.name,
-                    "header_image": details.header_image if details else f"https://cdn.akamai.steamstatic.com/steam/apps/{app.appid}/header.jpg",
-                    "owner_name": ", ".join(app.owner_steamids) if app.owner_steamids else "家庭成员",
+                    "header_image": details.header_image
+                    if details
+                    else f"https://cdn.akamai.steamstatic.com/steam/apps/{app.appid}/header.jpg",
+                    "owner_name": ", ".join(app.owner_steamids)
+                    if app.owner_steamids
+                    else "家庭成员",
                     "initial_price": f"¥ {details.initial_price:.2f}" if details else "¥ 0.00",
                     "final_price": f"¥ {details.final_price:.2f}" if details else "免费/已入库",
                     "discount_percent": details.discount_percent if details else 0,
                     "review_summary": details.review_summary if details else "暂无评测",
                     "positive_rate": details.positive_rate if details else 0,
-                    "genres": details.genres if details else ["Steam 共享"]
+                    "genres": details.genres if details else ["Steam 共享"],
                 }
 
                 card_bytes = None
@@ -340,7 +386,9 @@ class SteamFamilyPlugin(Star):
         """开黑车队雷达：分析多人共同拥有的联机游戏。"""
         ids = [m.strip() for m in member_ids.split() if m.strip()]
         if len(ids) < 2:
-            yield event.plain_result("请提供至少两位成员的 SteamID，例如：/steam_coop 76561198... 76561198...")
+            yield event.plain_result(
+                "请提供至少两位成员的 SteamID，例如：/steam_coop 76561198... 76561198..."
+            )
             return
         result = await self.agent_tools.find_coop_games(ids)
         yield event.plain_result(result)
@@ -349,11 +397,19 @@ class SteamFamilyPlugin(Star):
     async def cmd_dashboard(self, event: AstrMessageEvent):
         """获取 Steam 家庭资产全景 Web 看板访问地址。"""
         if not self.config.enable_dashboard_server:
-            yield event.plain_result("Web 看板服务未开启，请在插件配置中开启 enable_dashboard_server。")
+            yield event.plain_result(
+                "Web 看板服务未开启，请在插件配置中开启 enable_dashboard_server。"
+            )
             return
-        host_display = "127.0.0.1" if self.config.dashboard_host in ("0.0.0.0", "") else self.config.dashboard_host
+        host_display = (
+            "127.0.0.1"
+            if self.config.dashboard_host in ("0.0.0.0", "")
+            else self.config.dashboard_host
+        )
         url = f"http://{host_display}:{self.config.dashboard_port}"
-        yield event.plain_result(f"📊 Steam 家庭资产全景 Web 看板地址：\n{url}\n(支持远程浏览器访问)")
+        yield event.plain_result(
+            f"📊 Steam 家庭资产全景 Web 看板地址：\n{url}\n(支持远程浏览器访问)"
+        )
 
     @filter.command("steam_help", alias={"steam help", "steam", "steam帮助"})
     async def cmd_help(self, event: AstrMessageEvent):
@@ -373,7 +429,9 @@ class SteamFamilyPlugin(Star):
 
     # --- Agent LLM Tools ---
     @filter.llm_tool(name="query_family_games")
-    async def tool_query_family_games(self, event: AstrMessageEvent, keyword: str = "", tag: str = ""):
+    async def tool_query_family_games(
+        self, event: AstrMessageEvent, keyword: str = "", tag: str = ""
+    ):
         """检索 Steam 家庭库中的游戏列表与归属者。 Args: keyword(string): 游戏名关键词, tag(string): 类型标签"""
         return await self.agent_tools.query_family_games(keyword=keyword, tag=tag)
 

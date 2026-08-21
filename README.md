@@ -12,6 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python Version" />
   <img src="https://img.shields.io/badge/AstrBot-Plugin-FF6B6B?style=flat" alt="AstrBot Plugin" />
+  <img src="https://img.shields.io/badge/Ruff-Formatted-black?style=flat" alt="Ruff Formatted" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat" alt="License" />
 </p>
 
@@ -57,8 +58,8 @@
 
 ## ⚙️ 配置与绑定
 
-- **方式 A（WebUI 可视化配置）**：
-  在 AstrBot Web 控制台进入「插件管理」->「插件配置」找到 `astrbot_plugin_steam_family`，填入 `access_token` 和 `steam_id`，保存即可。
+- **方式 A（WebUI 可视化配置 · 推荐）**：
+  在 AstrBot Web 控制台进入「插件管理」->「插件配置」找到 `astrbot_plugin_steam_family`，填入 `access_token` 和 `steam_id`（可选填 `cookie` 开启全自动无感保活），保存即可。
 - **方式 B（聊天指令配置）**：
   在聊天中发送：
   ```text
@@ -71,16 +72,17 @@
 
 ## 📖 指令速查表
 
-| 指令 | 说明 | 使用示例 |
-|---|---|---|
-| `/steam_bind <token> [steamid]` | 绑定 Steam 鉴权凭据 | `/steam_bind eyJhb... 76561198000000001` |
-| `/steam_check` | 手动触发一次家庭库变动检查与播报 | `/steam_check` |
-| `/steam_sub` | 订阅当前会话的家庭库新游戏推送 | `/steam_sub` |
-| `/steam_unsub` | 取消当前会话的推送订阅 | `/steam_unsub` |
-| `/steam rank` | 查看家庭组“义父”资产贡献排行榜 | `/steam rank` |
-| `/steam roll [标签]` | 赛博轮盘：随机抽取家庭库内游戏 | `/steam roll RPG` 或 `/steam roll 动作` |
-| `/steam coop <@SteamID...>` | 开黑车队雷达：计算多人共有游戏 | `/steam coop 76561198... 76561198...` |
-| `/steam dashboard` | 获取 Web 资产全景看板直达访问链接 | `/steam dashboard` |
+| 指令 | 说明 | 兼容别名 | 使用示例 |
+|---|---|---|---|
+| `/steam_check` | 手动触发一次家庭库变动检查与同步 | `/steam check`, `/steam同步`, `/家庭库检查` | `/steam check` |
+| `/steam_sub` | 订阅当前会话的家庭库新游戏变动推送 | `/steam sub`, `/steam订阅` | `/steam sub` |
+| `/steam_unsub` | 取消当前会话的变动推送订阅 | `/steam unsub`, `/steam退订` | `/steam unsub` |
+| `/steam_rank` | 查看家庭组“义父”资产贡献排行榜 | `/steam rank`, `/义父榜`, `/steam排行` | `/steam rank` |
+| `/steam_roll [标签]` | 赛博轮盘：随机抽取家庭库内游戏 | `/steam roll`, `/今天玩什么`, `/steam抽奖` | `/steam roll RPG` |
+| `/steam_coop <SteamID...>` | 开黑车队雷达：计算多人共有联机游戏 | `/steam coop`, `/开黑雷达`, `/steam联机` | `/steam coop 76561198... 76561198...` |
+| `/steam_dashboard` | 获取 Web 资产全景看板直达访问链接 | `/steam dashboard`, `/steam大盘`, `/steam看板` | `/steam dashboard` |
+| `/steam_bind <token> [steamid]` | 绑定/更新 Steam 鉴权凭据 | `/steam bind`, `/steam绑定` | `/steam_bind eyJhb... 76561198...` |
+| `/steam_help` | 查看插件指令与功能帮助 | `/steam help`, `/steam`, `/steam帮助` | `/steam help` |
 
 ---
 
@@ -95,6 +97,15 @@
 
 ---
 
-## 📄 开源许可证
+## 💡 致谢与灵感来源 (Acknowledgements & Inspiration)
 
-本项目基于 [MIT License](LICENSE) 开源。
+本项目在开发过程中借鉴了开源社区优秀项目的创意与实现思路，特此致谢：
+- 🌟 **[AstrBot 框架](https://github.com/AstrBotDevs/AstrBot)**：强大的跨平台 LLM 机器人与插件开发框架。
+- 🌟 **[koishi-plugin-steam-family-bot](https://github.com/kt-fun/koishi-steam-family-bot)**（by [ktKongTong / kt-fun](https://github.com/kt-fun)）：启发了 Steam 家庭库监控的设计思路与 WebAPI Token 获取方案。
+- 🌟 **Steam 官方 Web API (`IFamilyGroupsService`)**：提供家庭组基础数据支持。
+
+---
+
+## 📄 开源许可证 (License)
+
+本项目基于 [MIT License](LICENSE) 开源。请在使用、修改或衍生本项目代码时保留原作者版权及许可声明。

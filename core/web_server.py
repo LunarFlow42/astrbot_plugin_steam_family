@@ -1,14 +1,15 @@
 import asyncio
 import logging
-from typing import Any
+
 try:
-    from .storage import FamilyStorage
     from .renderer import CardRenderer
+    from .storage import FamilyStorage
 except (ImportError, ValueError):
-    from core.storage import FamilyStorage
     from core.renderer import CardRenderer
+    from core.storage import FamilyStorage
 
 logger = logging.getLogger(__name__)
+
 
 class DashboardWebServer:
     def __init__(self, host: str, port: int, storage: FamilyStorage, renderer: CardRenderer):
@@ -23,7 +24,9 @@ class DashboardWebServer:
             self._server = await asyncio.start_server(self._handle_client, self.host, self.port)
             logger.info(f"Steam Family Web Dashboard running at http://{self.host}:{self.port}")
         except Exception as e:
-            logger.error(f"Failed to start Steam Family Web Dashboard on {self.host}:{self.port}: {e}")
+            logger.error(
+                f"Failed to start Steam Family Web Dashboard on {self.host}:{self.port}: {e}"
+            )
 
     async def stop(self):
         if self._server:
@@ -52,13 +55,14 @@ class DashboardWebServer:
                         f"Content-Length: {len(body)}\r\n"
                         "Access-Control-Allow-Origin: *\r\n"
                         "Connection: close\r\n\r\n"
-                    ).encode("utf-8")
+                    ).encode()
                     writer.write(headers + body)
                     await writer.drain()
                     writer.close()
                     return
                 elif path == "/api/data":
                     import json
+
                     data = await self.storage.get_dashboard_data()
                     body = json.dumps(data, ensure_ascii=False).encode("utf-8")
                     headers = (
@@ -67,14 +71,16 @@ class DashboardWebServer:
                         f"Content-Length: {len(body)}\r\n"
                         "Access-Control-Allow-Origin: *\r\n"
                         "Connection: close\r\n\r\n"
-                    ).encode("utf-8")
+                    ).encode()
                     writer.write(headers + body)
                     await writer.drain()
                     writer.close()
                     return
 
             # 404 handler
-            writer.write(b"HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nNot Found")
+            writer.write(
+                b"HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nNot Found"
+            )
             await writer.drain()
             writer.close()
         except Exception:

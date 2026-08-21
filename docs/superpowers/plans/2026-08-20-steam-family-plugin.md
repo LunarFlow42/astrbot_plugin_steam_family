@@ -38,6 +38,7 @@
 # tests/test_config.py
 from astrbot_plugin_steam_family.config import PluginConfig
 
+
 def test_default_config():
     config = PluginConfig()
     assert config.poll_interval_minutes == 15
@@ -46,12 +47,13 @@ def test_default_config():
     assert config.subscribers == []
     assert config.access_token == ""
 
+
 def test_custom_config():
     config = PluginConfig(
         access_token="test_token_123",
         steam_id="76561198000000000",
         poll_interval_minutes=30,
-        subscribers=["group_1001", "private_2002"]
+        subscribers=["group_1001", "private_2002"],
     )
     assert config.access_token == "test_token_123"
     assert config.steam_id == "76561198000000000"
@@ -120,46 +122,36 @@ repo: https://github.com/AstrBotDevs/astrbot_plugin_steam_family
 # src/astrbot_plugin_steam_family/config.py
 from pydantic import BaseModel, Field
 
+
 class PluginConfig(BaseModel):
     access_token: str = Field(
         default="",
-        description="Steam 网页端 Access Token（可在 store.steampowered.com 控制台获取）"
+        description="Steam 网页端 Access Token（可在 store.steampowered.com 控制台获取）",
     )
-    steam_id: str = Field(
-        default="",
-        description="绑定的 64 位 SteamID（如 76561198xxxxxxxx）"
-    )
+    steam_id: str = Field(default="", description="绑定的 64 位 SteamID（如 76561198xxxxxxxx）")
     family_group_id: str = Field(
         default="",
-        description="Steam 家庭组 ID（留空时将根据 SteamID 和 Token 自动查询）"
+        description="Steam 家庭组 ID（留空时将根据 SteamID 和 Token 自动查询）",
     )
     poll_interval_minutes: int = Field(
-        default=15,
-        ge=1,
-        le=1440,
-        description="后台自动轮询家庭库变动的间隔（分钟）"
+        default=15, ge=1, le=1440, description="后台自动轮询家庭库变动的间隔（分钟）"
     )
     proxy: str = Field(
         default="",
-        description="HTTP/HTTPS/SOCKS5 代理地址（例如 http://127.0.0.1:7890）"
+        description="HTTP/HTTPS/SOCKS5 代理地址（例如 http://127.0.0.1:7890）",
     )
     request_timeout: int = Field(
-        default=20,
-        ge=5,
-        le=120,
-        description="Steam API 请求超时时间（秒）"
+        default=20, ge=5, le=120, description="Steam API 请求超时时间（秒）"
     )
     enable_render_card: bool = Field(
         default=True,
-        description="是否渲染精美 HTML 游戏卡片图片推送（若关闭则推送富文本）"
+        description="是否渲染精美 HTML 游戏卡片图片推送（若关闭则推送富文本）",
     )
     filter_non_games: bool = Field(
-        default=True,
-        description="是否自动过滤 DLC、专用服务器、Demo、工具等非正式游戏"
+        default=True, description="是否自动过滤 DLC、专用服务器、Demo、工具等非正式游戏"
     )
     subscribers: list[str] = Field(
-        default_factory=list,
-        description="已订阅变动推送的目标会话 UMO 标识列表"
+        default_factory=list, description="已订阅变动推送的目标会话 UMO 标识列表"
     )
 ```
 
@@ -193,8 +185,13 @@ git commit -m "feat: scaffold project structure and config model"
 ```python
 # tests/test_steam_api.py
 import pytest
-from astrbot_plugin_steam_family.core.steam_api import SteamFamilyClient, SharedApp, AppDetails
+from astrbot_plugin_steam_family.core.steam_api import (
+    SteamFamilyClient,
+    SharedApp,
+    AppDetails,
+)
 from tests.mock_data import MOCK_FAMILY_APPS_RESPONSE, MOCK_APP_DETAILS_RESPONSE
+
 
 @pytest.mark.asyncio
 async def test_parse_shared_apps():
@@ -205,15 +202,31 @@ async def test_parse_shared_apps():
     assert apps[0].name == "Baldur's Gate 3"
     assert "76561198000000001" in apps[0].owner_steamids
 
+
 @pytest.mark.asyncio
 async def test_filter_non_games():
     client = SteamFamilyClient()
     raw_data = {
         "response": {
             "apps": [
-                {"appid": 100, "name": "Valid Game", "owner_steamids": ["123"], "app_type": 1},
-                {"appid": 101, "name": "Dedicated Server", "owner_steamids": ["123"], "exclude_reason": 1},
-                {"appid": 102, "name": "Free Demo", "owner_steamids": ["123"], "is_free": True}
+                {
+                    "appid": 100,
+                    "name": "Valid Game",
+                    "owner_steamids": ["123"],
+                    "app_type": 1,
+                },
+                {
+                    "appid": 101,
+                    "name": "Dedicated Server",
+                    "owner_steamids": ["123"],
+                    "exclude_reason": 1,
+                },
+                {
+                    "appid": 102,
+                    "name": "Free Demo",
+                    "owner_steamids": ["123"],
+                    "is_free": True,
+                },
             ]
         }
     }
@@ -239,19 +252,25 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+
 class SteamAuthExpiredError(Exception):
     """Raised when Steam access token is invalid or expired."""
+
     pass
+
 
 class SteamRateLimitError(Exception):
     """Raised when Steam rate limits the requests (HTTP 429)."""
+
     pass
+
 
 class FamilyMember(BaseModel):
     steamid: str
     persona_name: str = ""
     avatar_url: str = ""
     role: int = 0  # 1: Adult, 2: Child
+
 
 class SharedApp(BaseModel):
     appid: int
@@ -260,6 +279,7 @@ class SharedApp(BaseModel):
     exclude_reason: int | None = None
     app_type: int | None = None
     is_free: bool = False
+
 
 class AppDetails(BaseModel):
     appid: int
@@ -277,6 +297,7 @@ class AppDetails(BaseModel):
     positive_rate: int = 0  # 0-100 percent
     review_summary: str = "特别好评"
 
+
 class SteamFamilyClient:
     def __init__(self, proxy: str = "", timeout: int = 20):
         self.proxy = proxy
@@ -289,10 +310,12 @@ class SteamFamilyClient:
             timeout=self.timeout,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
+            },
         )
 
-    def parse_shared_apps(self, raw_json: dict[str, Any], filter_non_games: bool = True) -> list[SharedApp]:
+    def parse_shared_apps(
+        self, raw_json: dict[str, Any], filter_non_games: bool = True
+    ) -> list[SharedApp]:
         response = raw_json.get("response", {})
         raw_apps = response.get("apps", [])
         results: list[SharedApp] = []
@@ -311,14 +334,16 @@ class SteamFamilyClient:
                 if is_free and ("Dedicated Server" in name or "Tool" in name):
                     continue
 
-            results.append(SharedApp(
-                appid=appid,
-                name=name,
-                owner_steamids=owners,
-                exclude_reason=exclude_reason,
-                app_type=app_type,
-                is_free=is_free
-            ))
+            results.append(
+                SharedApp(
+                    appid=appid,
+                    name=name,
+                    owner_steamids=owners,
+                    exclude_reason=exclude_reason,
+                    app_type=app_type,
+                    is_free=is_free,
+                )
+            )
         return results
 
     async def get_family_group_id(self, access_token: str, steam_id: str) -> str | None:
@@ -335,12 +360,14 @@ class SteamFamilyClient:
             group_id = data.get("response", {}).get("family_groupid")
             return str(group_id) if group_id else None
 
-    async def get_shared_library(self, family_group_id: str, access_token: str, filter_non_games: bool = True) -> list[SharedApp]:
+    async def get_shared_library(
+        self, family_group_id: str, access_token: str, filter_non_games: bool = True
+    ) -> list[SharedApp]:
         url = "https://api.steampowered.com/IFamilyGroupsService/GetSharedLibraryApps/v1/"
         params = {
             "access_token": access_token,
             "family_groupid": family_group_id,
-            "include_non_shared": "true"
+            "include_non_shared": "true",
         }
         async with self._get_client() as client:
             resp = await client.get(url, params=params)
@@ -378,7 +405,10 @@ class SteamFamilyClient:
                     appid=appid,
                     name=info.get("name", f"App {appid}"),
                     chinese_name=info.get("name"),
-                    header_image=info.get("header_image", f"https://cdn.akamai.steamstatic.com/steam/apps/{appid}/header.jpg"),
+                    header_image=info.get(
+                        "header_image",
+                        f"https://cdn.akamai.steamstatic.com/steam/apps/{appid}/header.jpg",
+                    ),
                     is_free=info.get("is_free", False),
                     short_description=info.get("short_description", ""),
                     initial_price=initial_price,
@@ -387,7 +417,7 @@ class SteamFamilyClient:
                     genres=genres,
                     categories=categories,
                     positive_rate=88,
-                    review_summary="特别好评"
+                    review_summary="特别好评",
                 )
                 self._app_details_cache[appid] = details
                 return details
@@ -427,6 +457,7 @@ import pytest
 from astrbot_plugin_steam_family.core.storage import FamilyStorage
 from astrbot_plugin_steam_family.core.steam_api import SharedApp, AppDetails
 
+
 @pytest.mark.asyncio
 async def test_storage_lifecycle(tmp_path):
     db_path = str(tmp_path / "test.db")
@@ -443,7 +474,7 @@ async def test_storage_lifecycle(tmp_path):
     # Test Snapshot Save & Retrieve
     apps = [
         SharedApp(appid=1086940, name="Baldur's Gate 3", owner_steamids=["76561198000000001"]),
-        SharedApp(appid=1245620, name="ELDEN RING", owner_steamids=["76561198000000002"])
+        SharedApp(appid=1245620, name="ELDEN RING", owner_steamids=["76561198000000002"]),
     ]
     snapshot_id = await storage.save_snapshot(apps)
     assert snapshot_id is not None
@@ -459,7 +490,7 @@ async def test_storage_lifecycle(tmp_path):
         name="Baldur's Gate 3",
         initial_price=298.0,
         final_price=298.0,
-        genres=["RPG"]
+        genres=["RPG"],
     )
     await storage.cache_app_details(app_detail)
     cached = await storage.get_cached_app(1086940)
@@ -488,12 +519,20 @@ from astrbot_plugin_steam_family.core.steam_api import SharedApp, AppDetails
 
 logger = logging.getLogger(__name__)
 
+
 class FamilyMemberStat:
-    def __init__(self, steamid: str, game_count: int, total_initial_value: float, total_current_value: float):
+    def __init__(
+        self,
+        steamid: str,
+        game_count: int,
+        total_initial_value: float,
+        total_current_value: float,
+    ):
         self.steamid = steamid
         self.game_count = game_count
         self.total_initial_value = total_initial_value
         self.total_current_value = total_current_value
+
 
 class FamilyStorage:
     def __init__(self, db_path: str = "data/steam_family.db"):
@@ -549,7 +588,7 @@ class FamilyStorage:
         async with await self._get_conn() as db:
             await db.execute(
                 "INSERT OR IGNORE INTO subscriptions (target_id) VALUES (?)",
-                (target_id,)
+                (target_id,),
             )
             await db.commit()
 
@@ -570,7 +609,7 @@ class FamilyStorage:
         async with await self._get_conn() as db:
             cursor = await db.execute(
                 "INSERT INTO library_snapshots (app_count, raw_data) VALUES (?, ?)",
-                (len(apps), raw_json)
+                (len(apps), raw_json),
             )
             snapshot_id = cursor.lastrowid
 
@@ -579,14 +618,16 @@ class FamilyStorage:
                 for owner in app.owner_steamids:
                     await db.execute(
                         "INSERT OR IGNORE INTO app_ownership (appid, owner_steamid) VALUES (?, ?)",
-                        (app.appid, owner)
+                        (app.appid, owner),
                     )
             await db.commit()
             return snapshot_id
 
     async def get_latest_snapshot(self) -> dict[int, SharedApp] | None:
         async with await self._get_conn() as db:
-            async with db.execute("SELECT raw_data FROM library_snapshots ORDER BY id DESC LIMIT 1") as cursor:
+            async with db.execute(
+                "SELECT raw_data FROM library_snapshots ORDER BY id DESC LIMIT 1"
+            ) as cursor:
                 row = await cursor.fetchone()
                 if not row:
                     return None
@@ -600,18 +641,29 @@ class FamilyStorage:
 
     async def cache_app_details(self, details: AppDetails):
         async with await self._get_conn() as db:
-            await db.execute("""
+            await db.execute(
+                """
                 INSERT OR REPLACE INTO apps_cache (
                     appid, name, chinese_name, header_image, is_free,
                     initial_price, final_price, discount_percent,
                     genres, categories, positive_rate, review_summary
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                details.appid, details.name, details.chinese_name, details.header_image,
-                1 if details.is_free else 0, details.initial_price, details.final_price,
-                details.discount_percent, json.dumps(details.genres),
-                json.dumps(details.categories), details.positive_rate, details.review_summary
-            ))
+            """,
+                (
+                    details.appid,
+                    details.name,
+                    details.chinese_name,
+                    details.header_image,
+                    1 if details.is_free else 0,
+                    details.initial_price,
+                    details.final_price,
+                    details.discount_percent,
+                    json.dumps(details.genres),
+                    json.dumps(details.categories),
+                    details.positive_rate,
+                    details.review_summary,
+                ),
+            )
             await db.commit()
 
     async def get_cached_app(self, appid: int) -> AppDetails | None:
@@ -632,7 +684,7 @@ class FamilyStorage:
                     genres=json.loads(row[8]) if row[8] else [],
                     categories=json.loads(row[9]) if row[9] else [],
                     positive_rate=row[10],
-                    review_summary=row[11]
+                    review_summary=row[11],
                 )
 
     async def get_family_rankings(self) -> list[dict[str, Any]]:
@@ -655,7 +707,7 @@ class FamilyStorage:
                         "steamid": r[0],
                         "game_count": r[1],
                         "total_initial_price": round(r[2], 2),
-                        "total_current_price": round(r[3], 2)
+                        "total_current_price": round(r[3], 2),
                     }
                     for r in rows
                 ]
@@ -687,7 +739,7 @@ class FamilyStorage:
                         "name": r[1],
                         "chinese_name": r[2],
                         "header_image": r[3],
-                        "owned_count": r[4]
+                        "owned_count": r[4],
                     }
                     for r in rows
                 ]
@@ -724,26 +776,28 @@ import pytest
 from astrbot_plugin_steam_family.core.diff_engine import FamilyDiffEngine
 from astrbot_plugin_steam_family.core.steam_api import SharedApp
 
+
 def test_first_run_diff():
     engine = FamilyDiffEngine()
     current_apps = [
         SharedApp(appid=1, name="Game 1", owner_steamids=["user_a"]),
-        SharedApp(appid=2, name="Game 2", owner_steamids=["user_b"])
+        SharedApp(appid=2, name="Game 2", owner_steamids=["user_b"]),
     ]
     result = engine.compute_diff(current_apps=current_apps, previous_snapshot=None)
     assert result.is_first_run is True
     assert len(result.added_apps) == 2
     assert len(result.removed_apps) == 0
 
+
 def test_incremental_diff_added_and_removed():
     engine = FamilyDiffEngine()
     prev_snapshot = {
         1: SharedApp(appid=1, name="Game 1", owner_steamids=["user_a"]),
-        2: SharedApp(appid=2, name="Game 2", owner_steamids=["user_b"])
+        2: SharedApp(appid=2, name="Game 2", owner_steamids=["user_b"]),
     }
     current_apps = [
         SharedApp(appid=2, name="Game 2", owner_steamids=["user_b"]),
-        SharedApp(appid=3, name="Game 3 (New)", owner_steamids=["user_c"])
+        SharedApp(appid=3, name="Game 3 (New)", owner_steamids=["user_c"]),
     ]
     result = engine.compute_diff(current_apps=current_apps, previous_snapshot=prev_snapshot)
     assert result.is_first_run is False
@@ -752,14 +806,11 @@ def test_incremental_diff_added_and_removed():
     assert len(result.removed_apps) == 1
     assert result.removed_apps[0].appid == 1
 
+
 def test_no_changes():
     engine = FamilyDiffEngine()
-    prev_snapshot = {
-        1: SharedApp(appid=1, name="Game 1", owner_steamids=["user_a"])
-    }
-    current_apps = [
-        SharedApp(appid=1, name="Game 1", owner_steamids=["user_a"])
-    ]
+    prev_snapshot = {1: SharedApp(appid=1, name="Game 1", owner_steamids=["user_a"])}
+    current_apps = [SharedApp(appid=1, name="Game 1", owner_steamids=["user_a"])]
     result = engine.compute_diff(current_apps=current_apps, previous_snapshot=prev_snapshot)
     assert result.is_first_run is False
     assert len(result.added_apps) == 0
@@ -779,6 +830,7 @@ Expected: FAIL
 from pydantic import BaseModel, Field
 from astrbot_plugin_steam_family.core.steam_api import SharedApp
 
+
 class DiffResult(BaseModel):
     is_first_run: bool = False
     added_apps: list[SharedApp] = Field(default_factory=list)
@@ -788,21 +840,18 @@ class DiffResult(BaseModel):
     def has_changes(self) -> bool:
         return len(self.added_apps) > 0 or len(self.removed_apps) > 0
 
+
 class FamilyDiffEngine:
     def compute_diff(
         self,
         current_apps: list[SharedApp],
-        previous_snapshot: dict[int, SharedApp] | None
+        previous_snapshot: dict[int, SharedApp] | None,
     ) -> DiffResult:
         if previous_snapshot is None:
-            return DiffResult(
-                is_first_run=True,
-                added_apps=current_apps,
-                removed_apps=[]
-            )
+            return DiffResult(is_first_run=True, added_apps=current_apps, removed_apps=[])
 
         current_map = {app.appid: app for app in current_apps}
-        
+
         added: list[SharedApp] = [
             app for appid, app in current_map.items() if appid not in previous_snapshot
         ]
@@ -810,11 +859,7 @@ class FamilyDiffEngine:
             app for appid, app in previous_snapshot.items() if appid not in current_map
         ]
 
-        return DiffResult(
-            is_first_run=False,
-            added_apps=added,
-            removed_apps=removed
-        )
+        return DiffResult(is_first_run=False, added_apps=added, removed_apps=removed)
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -848,6 +893,7 @@ git commit -m "feat: implement family diff engine for incremental changes"
 import pytest
 from astrbot_plugin_steam_family.core.renderer import CardRenderer
 
+
 def test_template_rendering():
     renderer = CardRenderer()
     data = {
@@ -860,7 +906,7 @@ def test_template_rendering():
         "discount_percent": 0,
         "review_summary": "好评如潮 (96%)",
         "positive_rate": 96,
-        "genres": ["动作", "角色扮演", "神话"]
+        "genres": ["动作", "角色扮演", "神话"],
     }
     html = renderer.render_html(data)
     assert "黑神话：悟空" in html
@@ -1078,6 +1124,7 @@ from jinja2 import Environment, FileSystemLoader
 
 logger = logging.getLogger(__name__)
 
+
 class CardRenderer:
     def __init__(self, template_dir: str | Path | None = None):
         if template_dir is None:
@@ -1094,10 +1141,11 @@ class CardRenderer:
     async def render_game_card(self, data: dict[str, Any]) -> bytes | None:
         try:
             from playwright.async_api import async_playwright
+
             if self._playwright is None:
                 self._playwright = await async_playwright().start()
                 self._browser = await self._playwright.chromium.launch(headless=True)
-            
+
             page = await self._browser.new_page(viewport={"width": 720, "height": 600})
             html_content = self.render_html(data)
             await page.set_content(html_content, wait_until="load")
@@ -1154,6 +1202,7 @@ from astrbot_plugin_steam_family.core.storage import FamilyStorage
 from astrbot_plugin_steam_family.core.steam_api import SharedApp, AppDetails
 from astrbot_plugin_steam_family.agent.tools import SteamAgentTools
 
+
 @pytest.mark.asyncio
 async def test_agent_tools_queries(tmp_path):
     storage = FamilyStorage(str(tmp_path / "tools_test.db"))
@@ -1161,18 +1210,20 @@ async def test_agent_tools_queries(tmp_path):
 
     app1 = SharedApp(appid=1086940, name="Baldur's Gate 3", owner_steamids=["76561198000000001"])
     await storage.save_snapshot([app1])
-    await storage.cache_app_details(AppDetails(
-        appid=1086940,
-        name="Baldur's Gate 3",
-        chinese_name="博德之门3",
-        genres=["RPG", "奇幻"],
-        initial_price=298.0,
-        final_price=298.0,
-        positive_rate=96
-    ))
+    await storage.cache_app_details(
+        AppDetails(
+            appid=1086940,
+            name="Baldur's Gate 3",
+            chinese_name="博德之门3",
+            genres=["RPG", "奇幻"],
+            initial_price=298.0,
+            final_price=298.0,
+            positive_rate=96,
+        )
+    )
 
     tools = SteamAgentTools(storage)
-    
+
     # Query search
     res = await tools.query_family_games(keyword="博德之门")
     assert "博德之门3" in res
@@ -1203,11 +1254,14 @@ from astrbot_plugin_steam_family.core.storage import FamilyStorage
 
 logger = logging.getLogger(__name__)
 
+
 class SteamAgentTools:
     def __init__(self, storage: FamilyStorage):
         self.storage = storage
 
-    async def query_family_games(self, keyword: str = "", tag: str = "", max_price: float | None = None) -> str:
+    async def query_family_games(
+        self, keyword: str = "", tag: str = "", max_price: float | None = None
+    ) -> str:
         """
         在当前 Steam 家庭共享库中按关键词、标签或价格检索游戏。
         Args:
@@ -1226,7 +1280,10 @@ class SteamAgentTools:
             genres = cached.genres if cached else []
             price = cached.final_price if cached else 0.0
 
-            if keyword and (keyword.lower() not in app.name.lower() and (not c_name or keyword.lower() not in c_name.lower())):
+            if keyword and (
+                keyword.lower() not in app.name.lower()
+                and (not c_name or keyword.lower() not in c_name.lower())
+            ):
                 continue
             if tag and not any(tag.lower() in g.lower() for g in genres):
                 continue
@@ -1234,14 +1291,18 @@ class SteamAgentTools:
                 continue
 
             owners_str = ", ".join(app.owner_steamids) if app.owner_steamids else "共享成员"
-            matched.append(f"🎮 【{c_name}】(AppID: {appid}) - 现价: ¥{price:.1f} | 标签: {','.join(genres[:3])} | 归属: {owners_str}")
+            matched.append(
+                f"🎮 【{c_name}】(AppID: {appid}) - 现价: ¥{price:.1f} | 标签: {','.join(genres[:3])} | 归属: {owners_str}"
+            )
 
         if not matched:
             return f"未在家庭库中找到符合条件的游戏 (关键词: '{keyword}', 标签: '{tag}')。"
-        
+
         preview = "\n".join(matched[:10])
         total = len(matched)
-        return f"家庭库共检索到 {total} 款匹配游戏：\n{preview}" + ("\n...(仅显示前10款)" if total > 10 else "")
+        return f"家庭库共检索到 {total} 款匹配游戏：\n{preview}" + (
+            "\n...(仅显示前10款)" if total > 10 else ""
+        )
 
     async def get_family_stats(self) -> str:
         """
@@ -1258,10 +1319,12 @@ class SteamAgentTools:
             f"总游戏数: {total_games} 款",
             f"库总资产 (原价估值): ¥{total_initial_val:,.2f}",
             f"库总资产 (现价估值): ¥{total_current_val:,.2f}",
-            "\n👑 【家庭义父贡献榜】:"
+            "\n👑 【家庭义父贡献榜】:",
         ]
         for i, r in enumerate(rankings[:5], 1):
-            lines.append(f"{i}. 成员 {r['steamid'][-4:]}****: 贡献 {r['game_count']} 款游戏 (原值 ¥{r['total_initial_price']:,.2f})")
+            lines.append(
+                f"{i}. 成员 {r['steamid'][-4:]}****: 贡献 {r['game_count']} 款游戏 (原值 ¥{r['total_initial_price']:,.2f})"
+            )
 
         return "\n".join(lines)
 
@@ -1333,11 +1396,12 @@ from unittest.mock import AsyncMock, MagicMock
 from astrbot_plugin_steam_family.main import SteamFamilyPlugin
 from astrbot_plugin_steam_family.config import PluginConfig
 
+
 @pytest.mark.asyncio
 async def test_plugin_init_and_help():
     mock_context = MagicMock()
     mock_context.get_config.return_value = PluginConfig().model_dump()
-    
+
     plugin = SteamFamilyPlugin(mock_context)
     assert plugin is not None
     assert plugin.config is not None
@@ -1360,7 +1424,11 @@ from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
 from astrbot.api.message_components import Plain, Image
 
 from astrbot_plugin_steam_family.config import PluginConfig
-from astrbot_plugin_steam_family.core.steam_api import SteamFamilyClient, SteamAuthExpiredError, SteamRateLimitError
+from astrbot_plugin_steam_family.core.steam_api import (
+    SteamFamilyClient,
+    SteamAuthExpiredError,
+    SteamRateLimitError,
+)
 from astrbot_plugin_steam_family.core.storage import FamilyStorage
 from astrbot_plugin_steam_family.core.diff_engine import FamilyDiffEngine
 from astrbot_plugin_steam_family.core.renderer import CardRenderer
@@ -1368,11 +1436,12 @@ from astrbot_plugin_steam_family.agent.tools import SteamAgentTools
 
 logger = logging.getLogger(__name__)
 
+
 @register(
     "astrbot_plugin_steam_family",
     "AstrBot Community",
     "Steam 家庭资产监控与智能管家插件（支持卡片推送、义父榜与 LLM 找游戏）",
-    "0.1.0"
+    "0.1.0",
 )
 class SteamFamilyPlugin(Star):
     def __init__(self, context: Context):
@@ -1380,7 +1449,9 @@ class SteamFamilyPlugin(Star):
         raw_config = context.get_config() if hasattr(context, "get_config") else {}
         self.config = PluginConfig(**raw_config) if isinstance(raw_config, dict) else PluginConfig()
 
-        self.client = SteamFamilyClient(proxy=self.config.proxy, timeout=self.config.request_timeout)
+        self.client = SteamFamilyClient(
+            proxy=self.config.proxy, timeout=self.config.request_timeout
+        )
         self.storage = FamilyStorage("data/steam_family.db")
         self.diff_engine = FamilyDiffEngine()
         self.renderer = CardRenderer()
@@ -1406,13 +1477,17 @@ class SteamFamilyPlugin(Star):
         try:
             group_id = self.config.family_group_id
             if not group_id:
-                group_id = await self.client.get_family_group_id(self.config.access_token, self.config.steam_id)
+                group_id = await self.client.get_family_group_id(
+                    self.config.access_token, self.config.steam_id
+                )
                 if not group_id:
                     return "无法获取家庭组 ID，请检查 SteamID 或 Token 是否具备家庭组访问权限。"
                 self.config.family_group_id = group_id
 
             current_apps = await self.client.get_shared_library(
-                group_id, self.config.access_token, filter_non_games=self.config.filter_non_games
+                group_id,
+                self.config.access_token,
+                filter_non_games=self.config.filter_non_games,
             )
             prev_snapshot = await self.storage.get_latest_snapshot()
             diff = self.diff_engine.compute_diff(current_apps, prev_snapshot)
@@ -1433,19 +1508,23 @@ class SteamFamilyPlugin(Star):
                 details = await self.client.get_app_details(app.appid)
                 if details:
                     await self.storage.cache_app_details(details)
-                
+
                 # Render card if enabled
                 card_data = {
                     "game_name": details.chinese_name if details else app.name,
                     "original_name": app.name,
-                    "header_image": details.header_image if details else f"https://cdn.akamai.steamstatic.com/steam/apps/{app.appid}/header.jpg",
-                    "owner_name": ", ".join(app.owner_steamids) if app.owner_steamids else "家庭成员",
+                    "header_image": details.header_image
+                    if details
+                    else f"https://cdn.akamai.steamstatic.com/steam/apps/{app.appid}/header.jpg",
+                    "owner_name": ", ".join(app.owner_steamids)
+                    if app.owner_steamids
+                    else "家庭成员",
                     "initial_price": f"¥ {details.initial_price:.2f}" if details else "¥ 0.00",
                     "final_price": f"¥ {details.final_price:.2f}" if details else "免费/已入库",
                     "discount_percent": details.discount_percent if details else 0,
                     "review_summary": details.review_summary if details else "暂无评测",
                     "positive_rate": details.positive_rate if details else 0,
-                    "genres": details.genres if details else ["Steam 共享"]
+                    "genres": details.genres if details else ["Steam 共享"],
                 }
 
                 card_bytes = None
@@ -1457,7 +1536,9 @@ class SteamFamilyPlugin(Star):
                     try:
                         if card_bytes:
                             # Send image
-                            await self.context.send_message(target_id, [Image.fromBytes(card_bytes)])
+                            await self.context.send_message(
+                                target_id, [Image.fromBytes(card_bytes)]
+                            )
                         else:
                             # Send plain fallback
                             msg = f"✨ 【Steam 家庭库新游戏入库】\n🎮 《{card_data['game_name']}》\n👑 入库义父: {card_data['owner_name']}\n💰 价格: {card_data['final_price']}"
@@ -1532,7 +1613,9 @@ class SteamFamilyPlugin(Star):
         """开黑车队雷达：分析多人共同拥有的联机游戏。"""
         ids = [m.strip() for m in member_ids.split() if m.strip()]
         if len(ids) < 2:
-            yield event.plain_result("请提供至少两位成员的 SteamID，例如：/steam coop 76561198... 76561198...")
+            yield event.plain_result(
+                "请提供至少两位成员的 SteamID，例如：/steam coop 76561198... 76561198..."
+            )
             return
         coop_games = await self.storage.get_coop_games(ids)
         if not coop_games:
@@ -1545,7 +1628,9 @@ class SteamFamilyPlugin(Star):
 
     # --- Agent LLM Tools ---
     @filter.llm_tool(name="query_family_games")
-    async def tool_query_family_games(self, event: AstrMessageEvent, keyword: str = "", tag: str = ""):
+    async def tool_query_family_games(
+        self, event: AstrMessageEvent, keyword: str = "", tag: str = ""
+    ):
         """检索 Steam 家庭库中的游戏列表与归属者。 Args: keyword(string): 游戏名关键词, tag(string): 类型标签"""
         return await self.agent_tools.query_family_games(keyword=keyword, tag=tag)
 
@@ -1598,6 +1683,7 @@ from astrbot_plugin_steam_family.core.renderer import CardRenderer
 from astrbot_plugin_steam_family.agent.tools import SteamAgentTools
 from astrbot_plugin_steam_family.core.steam_api import SharedApp, AppDetails
 
+
 async def main():
     print("=== Steam Family Plugin E2E Simulation ===")
     storage = FamilyStorage("data/demo_steam_family.db")
@@ -1606,33 +1692,43 @@ async def main():
     # 1. Baseline Sync
     initial_apps = [
         SharedApp(appid=1086940, name="Baldur's Gate 3", owner_steamids=["76561198000000001"]),
-        SharedApp(appid=1245620, name="ELDEN RING", owner_steamids=["76561198000000002"])
+        SharedApp(appid=1245620, name="ELDEN RING", owner_steamids=["76561198000000002"]),
     ]
     diff_engine = FamilyDiffEngine()
     diff1 = diff_engine.compute_diff(initial_apps, None)
     await storage.save_snapshot(initial_apps)
-    print(f"✅ Baseline snapshot saved: {len(initial_apps)} games (First run: {diff1.is_first_run})")
+    print(
+        f"✅ Baseline snapshot saved: {len(initial_apps)} games (First run: {diff1.is_first_run})"
+    )
 
     # 2. Incremental Sync (New game added: Black Myth Wukong)
     updated_apps = initial_apps + [
-        SharedApp(appid=2358720, name="Black Myth: Wukong", owner_steamids=["76561198000000001"])
+        SharedApp(
+            appid=2358720,
+            name="Black Myth: Wukong",
+            owner_steamids=["76561198000000001"],
+        )
     ]
     prev_snapshot = await storage.get_latest_snapshot()
     diff2 = diff_engine.compute_diff(updated_apps, prev_snapshot)
     await storage.save_snapshot(updated_apps)
-    print(f"✅ Incremental diff: {len(diff2.added_apps)} new games added -> {[a.name for a in diff2.added_apps]}")
+    print(
+        f"✅ Incremental diff: {len(diff2.added_apps)} new games added -> {[a.name for a in diff2.added_apps]}"
+    )
 
     # 3. Cache game details
-    await storage.cache_app_details(AppDetails(
-        appid=2358720,
-        name="Black Myth: Wukong",
-        chinese_name="黑神话：悟空",
-        initial_price=268.0,
-        final_price=268.0,
-        genres=["动作", "角色扮演"],
-        positive_rate=96,
-        review_summary="好评如潮 (96%)"
-    ))
+    await storage.cache_app_details(
+        AppDetails(
+            appid=2358720,
+            name="Black Myth: Wukong",
+            chinese_name="黑神话：悟空",
+            initial_price=268.0,
+            final_price=268.0,
+            genres=["动作", "角色扮演"],
+            positive_rate=96,
+            review_summary="好评如潮 (96%)",
+        )
+    )
 
     # 4. Agent Tools Simulation
     tools = SteamAgentTools(storage)
@@ -1644,20 +1740,23 @@ async def main():
 
     # 5. Card Template Generation
     renderer = CardRenderer()
-    html = renderer.render_html({
-        "game_name": "黑神话：悟空",
-        "original_name": "Black Myth: Wukong",
-        "header_image": "https://cdn.akamai.steamstatic.com/steam/apps/2358720/header.jpg",
-        "owner_name": "义父一号",
-        "initial_price": "¥ 268.00",
-        "final_price": "¥ 268.00",
-        "discount_percent": 0,
-        "review_summary": "好评如潮 (96%)",
-        "positive_rate": 96,
-        "genres": ["动作", "角色扮演", "神话"]
-    })
+    html = renderer.render_html(
+        {
+            "game_name": "黑神话：悟空",
+            "original_name": "Black Myth: Wukong",
+            "header_image": "https://cdn.akamai.steamstatic.com/steam/apps/2358720/header.jpg",
+            "owner_name": "义父一号",
+            "initial_price": "¥ 268.00",
+            "final_price": "¥ 268.00",
+            "discount_percent": 0,
+            "review_summary": "好评如潮 (96%)",
+            "positive_rate": 96,
+            "genres": ["动作", "角色扮演", "神话"],
+        }
+    )
     print(f"\n✅ Rendered HTML card length: {len(html)} bytes")
     print("=== Simulation Completed Successfully ===")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

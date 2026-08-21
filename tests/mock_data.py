@@ -7,22 +7,18 @@ MOCK_FAMILY_APPS_RESPONSE = {
                 "appid": 1086940,
                 "name": "Baldur's Gate 3",
                 "packageid": 393963,
-                "owner_steamids": [
-                    "76561198000000001"
-                ],
+                "owner_steamids": ["76561198000000001"],
                 "exclude_reason": 0,
-                "is_free": False
+                "is_free": False,
             },
             {
                 "appid": 1245620,
                 "name": "ELDEN RING",
                 "packageid": 456123,
-                "owner_steamids": [
-                    "76561198000000002"
-                ],
+                "owner_steamids": ["76561198000000002"],
                 "exclude_reason": 0,
-                "is_free": False
-            }
+                "is_free": False,
+            },
         ]
     }
 }
@@ -41,16 +37,16 @@ MOCK_APP_DETAILS_RESPONSE = {
                 "currency": "CNY",
                 "initial": 29800,
                 "final": 29800,
-                "discount_percent": 0
+                "discount_percent": 0,
             },
             "genres": [
                 {"id": "3", "description": "角色扮演"},
-                {"id": "2", "description": "策略"}
+                {"id": "2", "description": "策略"},
             ],
             "categories": [
                 {"id": 1, "description": "多玩家"},
-                {"id": 9, "description": "合作"}
-            ]
-        }
+                {"id": 9, "description": "合作"},
+            ],
+        },
     }
 }

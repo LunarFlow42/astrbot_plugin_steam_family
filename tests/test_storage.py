@@ -1,6 +1,8 @@
 import pytest
+
+from core.steam_api import AppDetails, SharedApp
 from core.storage import FamilyStorage
-from core.steam_api import SharedApp, AppDetails
+
 
 @pytest.mark.asyncio
 async def test_storage_lifecycle(tmp_path):
@@ -18,7 +20,7 @@ async def test_storage_lifecycle(tmp_path):
     # Test Snapshot Save & Retrieve
     apps = [
         SharedApp(appid=1086940, name="Baldur's Gate 3", owner_steamids=["76561198000000001"]),
-        SharedApp(appid=1245620, name="ELDEN RING", owner_steamids=["76561198000000002"])
+        SharedApp(appid=1245620, name="ELDEN RING", owner_steamids=["76561198000000002"]),
     ]
     snapshot_id = await storage.save_snapshot(apps)
     assert snapshot_id is not None
@@ -34,7 +36,7 @@ async def test_storage_lifecycle(tmp_path):
         name="Baldur's Gate 3",
         initial_price=298.0,
         final_price=298.0,
-        genres=["RPG"]
+        genres=["RPG"],
     )
     await storage.cache_app_details(app_detail)
     cached = await storage.get_cached_app(1086940)

@@ -1,6 +1,6 @@
-import random
 import logging
-from typing import Any
+import random
+
 try:
     from ..core.storage import FamilyStorage
 except (ImportError, ValueError):
@@ -8,11 +8,14 @@ except (ImportError, ValueError):
 
 logger = logging.getLogger(__name__)
 
+
 class SteamAgentTools:
     def __init__(self, storage: FamilyStorage):
         self.storage = storage
 
-    async def query_family_games(self, keyword: str = "", tag: str = "", max_price: float | None = None) -> str:
+    async def query_family_games(
+        self, keyword: str = "", tag: str = "", max_price: float | None = None
+    ) -> str:
         """
         在当前 Steam 家庭共享库中按关键词、标签或价格检索游戏。
         Args:
@@ -31,7 +34,10 @@ class SteamAgentTools:
             genres = cached.genres if cached else []
             price = cached.final_price if cached else 0.0
 
-            if keyword and (keyword.lower() not in app.name.lower() and (not c_name or keyword.lower() not in c_name.lower())):
+            if keyword and (
+                keyword.lower() not in app.name.lower()
+                and (not c_name or keyword.lower() not in c_name.lower())
+            ):
                 continue
             if tag and not any(tag.lower() in g.lower() for g in genres):
                 continue
@@ -39,14 +45,18 @@ class SteamAgentTools:
                 continue
 
             owners_str = ", ".join(app.owner_steamids) if app.owner_steamids else "共享成员"
-            matched.append(f"🎮 【{c_name}】(AppID: {appid}) - 现价: ¥{price:.1f} | 标签: {','.join(genres[:3])} | 归属: {owners_str}")
+            matched.append(
+                f"🎮 【{c_name}】(AppID: {appid}) - 现价: ¥{price:.1f} | 标签: {','.join(genres[:3])} | 归属: {owners_str}"
+            )
 
         if not matched:
             return f"未在家庭库中找到符合条件的游戏 (关键词: '{keyword}', 标签: '{tag}')。"
-        
+
         preview = "\n".join(matched[:10])
         total = len(matched)
-        return f"家庭库共检索到 {total} 款匹配游戏：\n{preview}" + ("\n...(仅显示前10款)" if total > 10 else "")
+        return f"家庭库共检索到 {total} 款匹配游戏：\n{preview}" + (
+            "\n...(仅显示前10款)" if total > 10 else ""
+        )
 
     async def get_family_stats(self) -> str:
         """
@@ -63,10 +73,12 @@ class SteamAgentTools:
             f"总游戏数: {total_games} 款",
             f"库总资产 (原价估值): ¥{total_initial_val:,.2f}",
             f"库总资产 (现价估值): ¥{total_current_val:,.2f}",
-            "\n👑 【家庭义父贡献榜】:"
+            "\n👑 【家庭义父贡献榜】:",
         ]
         for i, r in enumerate(rankings[:5], 1):
-            lines.append(f"{i}. 成员 {r['steamid'][-4:]}****: 贡献 {r['game_count']} 款游戏 (原值 ¥{r['total_initial_price']:,.2f})")
+            lines.append(
+                f"{i}. 成员 {r['steamid'][-4:]}****: 贡献 {r['game_count']} 款游戏 (原值 ¥{r['total_initial_price']:,.2f})"
+            )
 
         return "\n".join(lines)
 

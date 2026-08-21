@@ -1,12 +1,13 @@
 import asyncio
 import os
-import shutil
 from pathlib import Path
-from core.storage import FamilyStorage
+
+from agent.tools import SteamAgentTools
 from core.diff_engine import FamilyDiffEngine
 from core.renderer import CardRenderer
-from agent.tools import SteamAgentTools
-from core.steam_api import SharedApp, AppDetails
+from core.steam_api import AppDetails, SharedApp
+from core.storage import FamilyStorage
+
 
 async def main():
     print("\n" + "=" * 60)
@@ -25,23 +26,31 @@ async def main():
     initial_apps = [
         SharedApp(appid=1086940, name="Baldur's Gate 3", owner_steamids=["76561198000000001"]),
         SharedApp(appid=1245620, name="ELDEN RING", owner_steamids=["76561198000000002"]),
-        SharedApp(appid=1145360, name="Hades", owner_steamids=["76561198000000001"])
+        SharedApp(appid=1145360, name="Hades", owner_steamids=["76561198000000001"]),
     ]
     diff_engine = FamilyDiffEngine()
     diff1 = diff_engine.compute_diff(initial_apps, None)
     await storage.save_snapshot(initial_apps)
-    print(f"2. [基线同步] 初次建立库快照成功: 共有 {len(initial_apps)} 款游戏 (is_first_run={diff1.is_first_run}) ✅")
+    print(
+        f"2. [基线同步] 初次建立库快照成功: 共有 {len(initial_apps)} 款游戏 (is_first_run={diff1.is_first_run}) ✅"
+    )
 
     # 2. 模拟增量变动检测（新增 1 款神作：黑神话悟空，移出 1 款）
     updated_apps = [
         SharedApp(appid=1086940, name="Baldur's Gate 3", owner_steamids=["76561198000000001"]),
         SharedApp(appid=1245620, name="ELDEN RING", owner_steamids=["76561198000000002"]),
-        SharedApp(appid=2358720, name="Black Myth: Wukong", owner_steamids=["76561198000000001"])
+        SharedApp(
+            appid=2358720,
+            name="Black Myth: Wukong",
+            owner_steamids=["76561198000000001"],
+        ),
     ]
     prev_snapshot = await storage.get_latest_snapshot()
     diff2 = diff_engine.compute_diff(updated_apps, prev_snapshot)
     await storage.save_snapshot(updated_apps)
-    print(f"3. [增量比对] 识别到新入库游戏: {[a.name for a in diff2.added_apps]}，移出游戏: {[a.name for a in diff2.removed_apps]} ✅")
+    print(
+        f"3. [增量比对] 识别到新入库游戏: {[a.name for a in diff2.added_apps]}，移出游戏: {[a.name for a in diff2.removed_apps]} ✅"
+    )
 
     # 3. 模拟 Steam 商店元数据抓取与缓存
     wukong_details = AppDetails(
@@ -53,7 +62,7 @@ async def main():
         final_price=268.0,
         genres=["动作", "角色扮演", "神话", "魂系"],
         positive_rate=96,
-        review_summary="好评如潮 (96%)"
+        review_summary="好评如潮 (96%)",
     )
     bg3_details = AppDetails(
         appid=1086940,
@@ -64,7 +73,7 @@ async def main():
         final_price=298.0,
         genres=["角色扮演", "策略", "回合制"],
         positive_rate=96,
-        review_summary="好评如潮 (96%)"
+        review_summary="好评如潮 (96%)",
     )
     await storage.cache_app_details(wukong_details)
     await storage.cache_app_details(bg3_details)
@@ -82,19 +91,21 @@ async def main():
 
     # 5. 渲染引擎验证
     renderer = CardRenderer()
-    card_html = renderer.render_html({
-        "appid": 2358720,
-        "game_name": "黑神话：悟空",
-        "original_name": "Black Myth: Wukong",
-        "header_image": "https://cdn.akamai.steamstatic.com/steam/apps/2358720/header.jpg",
-        "owner_name": "大义父 (76561198000000001)",
-        "initial_price": "¥ 268.00",
-        "final_price": "¥ 268.00",
-        "discount_percent": 0,
-        "review_summary": "好评如潮 (96%)",
-        "positive_rate": 96,
-        "genres": ["动作", "角色扮演", "神话", "魂系"]
-    })
+    card_html = renderer.render_html(
+        {
+            "appid": 2358720,
+            "game_name": "黑神话：悟空",
+            "original_name": "Black Myth: Wukong",
+            "header_image": "https://cdn.akamai.steamstatic.com/steam/apps/2358720/header.jpg",
+            "owner_name": "大义父 (76561198000000001)",
+            "initial_price": "¥ 268.00",
+            "final_price": "¥ 268.00",
+            "discount_percent": 0,
+            "review_summary": "好评如潮 (96%)",
+            "positive_rate": 96,
+            "genres": ["动作", "角色扮演", "神话", "魂系"],
+        }
+    )
     dashboard_data = await storage.get_dashboard_data()
     dashboard_html = renderer.render_dashboard_html(dashboard_data)
 
@@ -105,10 +116,13 @@ async def main():
     with open(out_dir / "preview_dashboard.html", "w", encoding="utf-8") as f:
         f.write(dashboard_html)
 
-    print(f"\n5. [卡片与大盘生成] 已成功生成预览文件至 assets/preview/ (卡片: {len(card_html)} 字节, 大盘: {len(dashboard_html)} 字节) ✅")
+    print(
+        f"\n5. [卡片与大盘生成] 已成功生成预览文件至 assets/preview/ (卡片: {len(card_html)} 字节, 大盘: {len(dashboard_html)} 字节) ✅"
+    )
     print("\n" + "=" * 60)
     print("🎉 【全链路端到端仿真测试全部通过！】")
     print("=" * 60 + "\n")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

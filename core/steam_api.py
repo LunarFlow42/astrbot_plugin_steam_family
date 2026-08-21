@@ -1,23 +1,26 @@
 import asyncio
 import logging
 from typing import Any
+
 import httpx
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
+
 class SteamAuthExpiredError(Exception):
     """Raised when Steam Access Token has expired or is invalid."""
-    pass
+
 
 class SteamRateLimitError(Exception):
     """Raised when Steam rate limit (429) is encountered."""
-    pass
+
 
 class FamilyMember(BaseModel):
     steamid: str
     role: int = 0
     time_joined: int = 0
+
 
 class SharedApp(BaseModel):
     appid: int
@@ -25,6 +28,7 @@ class SharedApp(BaseModel):
     owner_steamids: list[str] = Field(default_factory=list)
     exclude_reason: int = 0
     app_type: int = 1
+
 
 class AppDetails(BaseModel):
     appid: int
@@ -40,6 +44,7 @@ class AppDetails(BaseModel):
     positive_rate: int = 0
     review_summary: str = ""
 
+
 class SteamFamilyClient:
     def __init__(self, proxy: str = "", timeout: int = 20):
         self.proxy = proxy
@@ -49,7 +54,7 @@ class SteamFamilyClient:
             timeout=self.timeout,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            }
+            },
         )
         self._app_details_cache: dict[int, AppDetails] = {}
 
@@ -63,7 +68,9 @@ class SteamFamilyClient:
         if not cookie:
             return None
         try:
-            cookie_header = cookie if "steamLoginSecure" in cookie else f"steamLoginSecure={cookie.strip()}"
+            cookie_header = (
+                cookie if "steamLoginSecure" in cookie else f"steamLoginSecure={cookie.strip()}"
+            )
             url = "https://store.steampowered.com/pointssummary/ajaxgetasyncconfig"
             resp = await self._client.get(url, headers={"Cookie": cookie_header})
             if resp.status_code == 200:
@@ -78,25 +85,19 @@ class SteamFamilyClient:
 
     async def get_family_group_id(self, access_token: str, steam_id: str) -> str | None:
         url = "https://api.steampowered.com/IFamilyGroupsService/GetFamilyGroupForUser/v1/"
-        params = {
-            "access_token": access_token,
-            "steamid": steam_id
-        }
+        params = {"access_token": access_token, "steamid": steam_id}
         resp = await self._client.get(url, params=params)
         if resp.status_code == 401 or resp.status_code == 403:
             raise SteamAuthExpiredError("Steam Access Token expired or unauthorized.")
         if resp.status_code == 429:
             raise SteamRateLimitError("Steam API rate limit exceeded.")
-        
+
         data = resp.json()
         family_groupid = data.get("response", {}).get("family_groupid")
         return str(family_groupid) if family_groupid else None
 
     async def get_shared_library(
-        self,
-        family_group_id: str,
-        access_token: str,
-        filter_non_games: bool = True
+        self, family_group_id: str, access_token: str, filter_non_games: bool = True
     ) -> list[SharedApp]:
         url = "https://api.steampowered.com/IFamilyGroupsService/GetSharedLibraryApps/v1/"
         params = {
@@ -104,9 +105,9 @@ class SteamFamilyClient:
             "access_token": access_token,
             "include_own": "true",
             "include_excluded": "true",
-            "include_non_games": "true"
+            "include_non_games": "true",
         }
-        
+
         retries = 3
         delay = 2.0
         for attempt in range(retries):
@@ -120,7 +121,7 @@ class SteamFamilyClient:
                     await asyncio.sleep(delay)
                     delay *= 2
                     continue
-                
+
                 resp.raise_for_status()
                 data = resp.json()
                 return self.parse_shared_apps(data, filter_non_games=filter_non_games)
@@ -131,7 +132,9 @@ class SteamFamilyClient:
                 delay *= 2
         return []
 
-    def parse_shared_apps(self, raw_response: dict[str, Any], filter_non_games: bool = False) -> list[SharedApp]:
+    def parse_shared_apps(
+        self, raw_response: dict[str, Any], filter_non_games: bool = False
+    ) -> list[SharedApp]:
         apps_data = raw_response.get("response", {}).get("apps", [])
         shared_apps = []
         for item in apps_data:
@@ -149,7 +152,14 @@ class SteamFamilyClient:
                 if exclude_reason != 0:
                     continue
                 lower_name = name.lower()
-                non_game_keywords = ["dedicated server", "soundtrack", "test server", "sdk", "wallpaper", "benchmark"]
+                non_game_keywords = [
+                    "dedicated server",
+                    "soundtrack",
+                    "test server",
+                    "sdk",
+                    "wallpaper",
+                    "benchmark",
+                ]
                 if any(kw in lower_name for kw in non_game_keywords):
                     continue
 
@@ -159,7 +169,7 @@ class SteamFamilyClient:
                     name=name,
                     owner_steamids=owner_steamids,
                     exclude_reason=exclude_reason,
-                    app_type=app_type
+                    app_type=app_type,
                 )
             )
         return shared_apps
@@ -169,11 +179,7 @@ class SteamFamilyClient:
             return self._app_details_cache[appid]
 
         url = "https://store.steampowered.com/api/appdetails"
-        params = {
-            "appids": appid,
-            "cc": "cn",
-            "l": "schinese"
-        }
+        params = {"appids": appid, "cc": "cn", "l": "schinese"}
         try:
             resp = await self._client.get(url, params=params)
             if resp.status_code == 200:
@@ -198,8 +204,12 @@ class SteamFamilyClient:
         final_price = price_overview.get("final", 0) / 100.0 if price_overview else 0.0
         discount_percent = price_overview.get("discount_percent", 0) if price_overview else 0
 
-        genres = [g.get("description", "") for g in app_data.get("genres", []) if g.get("description")]
-        categories = [c.get("description", "") for c in app_data.get("categories", []) if c.get("description")]
+        genres = [
+            g.get("description", "") for g in app_data.get("genres", []) if g.get("description")
+        ]
+        categories = [
+            c.get("description", "") for c in app_data.get("categories", []) if c.get("description")
+        ]
 
         return AppDetails(
             appid=appid,
@@ -213,5 +223,5 @@ class SteamFamilyClient:
             genres=genres,
             categories=categories,
             positive_rate=95,
-            review_summary="特别好评"
+            review_summary="特别好评",
         )
