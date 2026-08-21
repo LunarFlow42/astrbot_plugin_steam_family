@@ -76,9 +76,9 @@
     "default": true
   },
   "subscribers": {
-    "description": "已订阅变动推送的目标会话 UMO 列表",
+    "description": "新游戏入库推送的目标群聊/私聊列表",
     "type": "list",
-    "hint": "可通过在群内发送 /steam_sub 自动添加当前会话",
+    "hint": "接收新游戏入库卡片播报的目标列表。无需手动填写，直接在你想接收通知的群内发送 /steam sub 即可自动订阅！",
     "default": []
   }
 }
