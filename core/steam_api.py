@@ -175,7 +175,19 @@ class SteamFamilyClient:
                 if any(kw in lower_name for kw in non_game_keywords):
                     continue
 
-            rt_time_acquired = item.get("rt_time_acquired", 0)
+            rt_time_raw = (
+                item.get("rt_time_acquired")
+                or item.get("rt_time_created")
+                or item.get("rtime_acquired")
+                or item.get("time_acquired")
+                or item.get("time")
+                or 0
+            )
+            try:
+                rt_time_acquired = int(rt_time_raw)
+            except (ValueError, TypeError):
+                rt_time_acquired = 0
+
             shared_apps.append(
                 SharedApp(
                     appid=appid,

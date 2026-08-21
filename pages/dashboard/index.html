@@ -303,6 +303,7 @@
                 <th>游戏名称</th>
                 <th>类型标签</th>
                 <th>归属义父</th>
+                <th>入库时间</th>
                 <th>原价</th>
                 <th>当前折后价</th>
                 <th>好评率</th>
@@ -660,6 +661,10 @@
       const priceText = g.final_price > 0 ? `¥ ${g.final_price}` : (g.is_cached ? '免费 / 已入库' : '<span style="color:#f59e0b;">⏳ 估值中</span>');
       const discountPill = g.discount_percent > 0 ? `<span class="discount-badge">-${g.discount_percent}%</span>` : '';
       const storeUrl = `https://store.steampowered.com/app/${g.appid}`;
+      const acquiredDate = g.rt_time_acquired > 0
+        ? new Date(g.rt_time_acquired * 1000).toLocaleDateString('zh-CN')
+        : '';
+      const acquiredBadge = acquiredDate ? `<span style="font-size: 11px; color: var(--steam-blue); background: rgba(25, 153, 255, 0.12); padding: 1px 6px; border-radius: 4px;">⏱️ ${acquiredDate}</span>` : '';
       return `
         <div class="game-card" onclick="window.open('${storeUrl}', '_blank')" style="cursor: pointer;">
           <div class="game-cover-wrap">
@@ -670,6 +675,7 @@
             <div>
               <div class="game-card-title" title="${g.name}">${g.name}</div>
               <div class="game-card-subtitle" title="${g.original_name}">${g.original_name && g.original_name !== g.name ? g.original_name : g.owners}</div>
+              <div style="margin-top: 3px; min-height: 18px;">${acquiredBadge}</div>
             </div>
             <div class="game-card-meta">
               <span class="game-price">${priceText}</span>
@@ -730,7 +736,7 @@
 
       // Sorting
       if (sort === "newest") {
-        filtered.sort((a, b) => (b.rt_time_acquired || 0) - (a.rt_time_acquired || 0) || b.appid - a.appid);
+        filtered.sort((a, b) => ((b.rt_time_acquired || 0) - (a.rt_time_acquired || 0)) || (b.appid - a.appid));
       } else if (sort === "price_desc") {
         filtered.sort((a, b) => (b.initial_price || 0) - (a.initial_price || 0));
       } else if (sort === "discount_desc") {
@@ -748,7 +754,7 @@
 
       if (filtered.length === 0) {
         grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 40px;">🔍 未找到符合条件的游戏</div>`;
-        tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 30px;">未找到符合条件的游戏</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-dim); padding: 30px;">未找到符合条件的游戏</td></tr>`;
         return;
       }
 
@@ -756,20 +762,24 @@
       grid.innerHTML = filtered.slice(0, 60).map(g => renderGameCardHTML(g)).join("");
 
       // Render Table
-      tableBody.innerHTML = filtered.slice(0, 100).map(g => `
-        <tr>
-          <td><code>${g.appid}</code></td>
-          <td><b>${g.name}</b> ${g.original_name && g.original_name !== g.name ? `<span style="color:var(--text-dim); font-size:11px;">(${g.original_name})</span>` : ''}</td>
-          <td><span style="font-size: 11px; color: var(--text-muted);">${(g.genres || []).slice(0, 2).join(", ")}</span></td>
-          <td><span style="font-size: 12px; color: var(--steam-blue);">${g.owners}</span></td>
-          <td>¥ ${g.initial_price}</td>
-          <td style="color: var(--steam-green); font-weight: 700;">¥ ${g.final_price}</td>
-          <td>⭐ ${g.positive_rate}%</td>
-          <td style="text-align: center;">
-            <button class="btn btn-secondary" style="font-size: 11px; padding: 3px 8px;" onclick="window.open('https://store.steampowered.com/app/${g.appid}', '_blank')">商店 ↗</button>
-          </td>
-        </tr>
-      `).join("");
+      tableBody.innerHTML = filtered.slice(0, 100).map(g => {
+        const acq = g.rt_time_acquired > 0 ? new Date(g.rt_time_acquired * 1000).toLocaleDateString('zh-CN') : '--';
+        return `
+          <tr>
+            <td><code>${g.appid}</code></td>
+            <td><b>${g.name}</b> ${g.original_name && g.original_name !== g.name ? `<span style="color:var(--text-dim); font-size:11px;">(${g.original_name})</span>` : ''}</td>
+            <td><span style="font-size: 11px; color: var(--text-muted);">${(g.genres || []).slice(0, 2).join(", ")}</span></td>
+            <td><span style="font-size: 12px; color: var(--steam-blue);">${g.owners}</span></td>
+            <td><span style="font-size: 12px; color: var(--text-muted);">${acq}</span></td>
+            <td>¥ ${g.initial_price}</td>
+            <td style="color: var(--steam-green); font-weight: 700;">¥ ${g.final_price}</td>
+            <td>⭐ ${g.positive_rate}%</td>
+            <td style="text-align: center;">
+              <button class="btn btn-secondary" style="font-size: 11px; padding: 3px 8px;" onclick="window.open('https://store.steampowered.com/app/${g.appid}', '_blank')">商店 ↗</button>
+            </td>
+          </tr>
+        `;
+      }).join("");
     }
 
     function toggleLibView() {
