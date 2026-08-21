@@ -306,6 +306,9 @@ class FamilyStorage:
         total_final = sum(r["total_current_price"] for r in rankings)
 
         all_snapshot_apps = []
+        genre_counter: dict[str, int] = {}
+        price_counter = {"free": 0, "under50": 0, "50to150": 0, "150to300": 0, "over300": 0}
+
         if snapshot:
             sorted_apps = sorted(
                 snapshot.values(),
@@ -314,6 +317,30 @@ class FamilyStorage:
             )
             for app in sorted_apps:
                 detail = cached_map.get(app.appid)
+                init_p = detail.initial_price if detail else 0.0
+                final_p = detail.final_price if detail else 0.0
+                disc = detail.discount_percent if detail else 0
+                pos_rate = detail.positive_rate if detail else 95
+                genres = detail.genres if detail and detail.genres else ["Steam 共享"]
+                cats = detail.categories if detail and detail.categories else []
+
+                # Count genres
+                for g in genres:
+                    if g:
+                        genre_counter[g] = genre_counter.get(g, 0) + 1
+
+                # Count price ranges
+                if detail and detail.is_free or (init_p == 0 and detail is not None):
+                    price_counter["free"] += 1
+                elif init_p < 50:
+                    price_counter["under50"] += 1
+                elif init_p <= 150:
+                    price_counter["50to150"] += 1
+                elif init_p <= 300:
+                    price_counter["150to300"] += 1
+                else:
+                    price_counter["over300"] += 1
+
                 all_snapshot_apps.append(
                     {
                         "appid": app.appid,
@@ -325,15 +352,28 @@ class FamilyStorage:
                         "owners": ", ".join(app.owner_steamids)
                         if app.owner_steamids
                         else "家庭成员",
-                        "initial_price": detail.initial_price if detail else 0.0,
-                        "final_price": detail.final_price if detail else 0.0,
+                        "owner_steamids": app.owner_steamids,
+                        "initial_price": init_p,
+                        "final_price": final_p,
+                        "discount_percent": disc,
                         "is_cached": detail is not None,
-                        "positive_rate": detail.positive_rate if detail else 95,
-                        "genres": detail.genres if detail else ["Steam 共享"],
+                        "positive_rate": pos_rate,
+                        "review_summary": detail.review_summary if detail else "好评",
+                        "genres": genres,
+                        "categories": cats,
                         "rt_time_acquired": getattr(app, "rt_time_acquired", 0),
                     }
                 )
 
+        # Calculate rankings contribution percentage
+        for r in rankings:
+            r["percentage"] = (
+                round((r["total_initial_price"] / total_initial * 100), 1)
+                if total_initial > 0
+                else round(100.0 / max(1, len(rankings)), 1)
+            )
+
+        top_genres = sorted(genre_counter.items(), key=lambda x: x[1], reverse=True)[:8]
         recent_games = all_snapshot_apps[:12]
         cached_count = len([a for a in all_snapshot_apps if a.get("is_cached")])
 
@@ -346,4 +386,6 @@ class FamilyStorage:
             "rankings": rankings,
             "recent_games": recent_games,
             "all_snapshot_apps": all_snapshot_apps,
+            "top_genres": [{"genre": g[0], "count": g[1]} for g in top_genres],
+            "price_stats": price_counter,
         }

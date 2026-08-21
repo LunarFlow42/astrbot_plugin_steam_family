@@ -2,80 +2,171 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>Steam 家庭资产全景看板 - AstrBot</title>
+  <title>Steam 家庭资产全景管家 - AstrBot Dashboard</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif; }
-    body { background: #0c1017; color: #c7d5e0; padding: 24px; }
-    .container { max-width: 1200px; margin: 0 auto; }
-    
-    /* Header */
-    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 16px; flex-wrap: wrap; gap: 14px; }
-    .header h1 { font-size: 24px; color: #fff; display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -0.5px; }
-    .header-actions { display: flex; align-items: center; gap: 10px; }
-    
-    /* Buttons */
-    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s ease; text-decoration: none; }
-    .btn-primary { background: linear-gradient(135deg, #1999ff 0%, #0077dd 100%); color: #fff; box-shadow: 0 4px 14px rgba(0, 119, 221, 0.35); }
-    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 119, 221, 0.5); }
-    .btn-primary:active { transform: translateY(0); }
-    .btn-secondary { background: rgba(255, 255, 255, 0.08); color: #c7d5e0; border: 1px solid rgba(255, 255, 255, 0.12); }
+    :root {
+      --bg-base: #0a0e14;
+      --bg-surface: #111722;
+      --bg-card: rgba(21, 29, 43, 0.75);
+      --bg-card-hover: rgba(28, 39, 58, 0.9);
+      --border-color: rgba(102, 192, 244, 0.15);
+      --border-focus: rgba(102, 192, 244, 0.5);
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --steam-blue: #66c0f4;
+      --steam-dark-blue: #1999ff;
+      --steam-green: #a4d007;
+      --accent-purple: #a855f7;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.4);
+      --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+    body { background: var(--bg-base); color: var(--text-main); padding: 20px; min-height: 100vh; overflow-x: hidden; }
+    .container { max-width: 1300px; margin: 0 auto; }
+
+    /* Top Navigation Header */
+    .top-nav { display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, rgba(25, 153, 255, 0.12), rgba(15, 23, 42, 0.85)); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 14px 20px; margin-bottom: 20px; backdrop-filter: blur(12px); box-shadow: var(--shadow-card); flex-wrap: wrap; gap: 14px; }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-icon { width: 38px; height: 38px; border-radius: 10px; background: linear-gradient(135deg, #1999ff, #0055aa); display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 4px 14px rgba(25, 153, 255, 0.4); }
+    .brand-title { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -0.3px; display: flex; align-items: center; gap: 8px; }
+    .brand-subtitle { font-size: 12px; color: var(--text-muted); }
+
+    .nav-tabs { display: flex; gap: 6px; background: rgba(0, 0, 0, 0.35); padding: 4px; border-radius: var(--radius-md); border: 1px solid rgba(255, 255, 255, 0.06); flex-wrap: wrap; }
+    .nav-tab-btn { background: transparent; border: none; color: var(--text-muted); padding: 7px 14px; border-radius: 7px; font-size: 13px; font-weight: 600; cursor: pointer; transition: var(--transition); display: flex; align-items: center; gap: 6px; }
+    .nav-tab-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.08); }
+    .nav-tab-btn.active { color: #fff; background: linear-gradient(135deg, #1999ff, #0077dd); box-shadow: 0 3px 12px rgba(25, 153, 255, 0.35); }
+
+    .nav-actions { display: flex; gap: 8px; align-items: center; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 15px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: var(--transition); text-decoration: none; user-select: none; }
+    .btn-primary { background: linear-gradient(135deg, #1999ff 0%, #0066cc 100%); color: #fff; box-shadow: 0 4px 14px rgba(0, 102, 204, 0.4); }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 102, 204, 0.6); }
+    .btn-secondary { background: rgba(255, 255, 255, 0.08); color: var(--text-main); border: 1px solid rgba(255, 255, 255, 0.12); }
     .btn-secondary:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
-    .btn-danger { background: rgba(235, 77, 75, 0.15); color: #ff6b6b; border: 1px solid rgba(235, 77, 75, 0.3); font-size: 12px; padding: 5px 10px; border-radius: 6px; }
-    .btn-danger:hover { background: #eb4d4b; color: #fff; }
+    .btn-danger { background: rgba(244, 63, 94, 0.15); color: #ff6b6b; border: 1px solid rgba(244, 63, 94, 0.3); font-size: 12px; padding: 5px 10px; border-radius: 6px; }
+    .btn-danger:hover { background: #f43f5e; color: #fff; }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
 
+    /* Tab Panes */
+    .tab-pane { display: none; animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+    .tab-pane.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
     /* Stat Cards */
-    .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 28px; }
-    .stat-card { background: linear-gradient(135deg, #17202d 0%, #101620 100%); border: 1px solid rgba(102,192,244,0.15); border-radius: 10px; padding: 18px; position: relative; overflow: hidden; }
-    .stat-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, #66c0f4, transparent); }
-    .stat-title { font-size: 12px; color: #8f98a0; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .stat-value { font-size: 26px; font-weight: 800; color: #66c0f4; }
-    .stat-value.highlight { color: #a4d007; }
+    .stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .stat-card { background: linear-gradient(145deg, #161e2b, #111722); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 18px; position: relative; overflow: hidden; box-shadow: var(--shadow-card); }
+    .stat-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--steam-blue), transparent); }
+    .stat-card.accent-green::before { background: linear-gradient(90deg, var(--steam-green), transparent); }
+    .stat-card.accent-purple::before { background: linear-gradient(90deg, var(--accent-purple), transparent); }
+    .stat-card.accent-amber::before { background: linear-gradient(90deg, var(--accent-amber), transparent); }
+    .stat-title { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+    .stat-value { font-size: 28px; font-weight: 800; color: var(--steam-blue); letter-spacing: -0.5px; }
+    .stat-value.green { color: var(--steam-green); }
+    .stat-value.purple { color: var(--accent-purple); }
+    .stat-value.amber { color: var(--accent-amber); }
+    .stat-desc { font-size: 12px; color: var(--text-dim); margin-top: 5px; }
 
-    /* Tables & Cards */
-    .section-title { font-size: 18px; color: #fff; font-weight: 700; display: flex; align-items: center; gap: 8px; margin: 28px 0 14px 0; }
-    .table-container { background: #141c28; border: 1px solid rgba(255,255,255,0.06); border-radius: 10px; overflow: hidden; margin-bottom: 28px; }
+    /* Section Cards */
+    .section-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 20px; margin-bottom: 24px; backdrop-filter: blur(10px); box-shadow: var(--shadow-card); }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+    .section-title { font-size: 16px; font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px; }
+
+    /* Ranking Table & Progress Bars */
     .ranking-table { width: 100%; border-collapse: collapse; text-align: left; }
-    .ranking-table th, .ranking-table td { padding: 12px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 13px; }
-    .ranking-table th { background: #1a2434; color: #8f98a0; font-size: 12px; font-weight: 600; }
-    .ranking-table tr:hover td { background: rgba(255, 255, 255, 0.02); }
-    
-    .game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-bottom: 32px; }
-    .game-card { background: #151d29; border-radius: 8px; overflow: hidden; border: 1px solid rgba(255,255,255,0.06); transition: transform 0.2s, border-color 0.2s; }
-    .game-card:hover { transform: translateY(-3px); border-color: rgba(102,192,244,0.4); }
-    .game-card img { width: 100%; height: 120px; object-fit: cover; background: #101620; }
-    .game-card-info { padding: 12px; }
-    .game-card-title { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .game-card-meta { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #a4d007; font-weight: 700; }
+    .ranking-table th, .ranking-table td { padding: 12px 16px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); font-size: 13px; }
+    .ranking-table th { background: rgba(0, 0, 0, 0.25); color: var(--text-muted); font-size: 12px; font-weight: 600; }
+    .ranking-table tr:hover td { background: rgba(255, 255, 255, 0.03); }
+    .rank-pill { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; font-size: 12px; font-weight: 800; }
+    .rank-1 { background: linear-gradient(135deg, #ffd700, #ffaa00); color: #000; box-shadow: 0 2px 8px rgba(255, 215, 0, 0.4); }
+    .rank-2 { background: linear-gradient(135deg, #e0e0e0, #a0a0a0); color: #000; }
+    .rank-3 { background: linear-gradient(135deg, #cd7f32, #8b4513); color: #fff; }
+    .rank-other { background: rgba(255, 255, 255, 0.08); color: var(--text-muted); }
+    .progress-bar-bg { width: 100%; height: 6px; background: rgba(255, 255, 255, 0.08); border-radius: 3px; overflow: hidden; margin-top: 5px; }
+    .progress-bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
 
-    /* Dev & Test Box */
-    .dev-box { background: linear-gradient(180deg, #161e2b 0%, #111722 100%); border: 1px solid rgba(255, 170, 0, 0.25); border-radius: 10px; padding: 20px; margin-top: 32px; }
-    .dev-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
-    .dev-title { font-size: 16px; color: #ffaa00; font-weight: 700; display: flex; align-items: center; gap: 8px; }
-    .search-input { background: #0c1017; border: 1px solid rgba(255, 255, 255, 0.15); color: #fff; padding: 7px 12px; border-radius: 6px; font-size: 12px; width: 240px; outline: none; transition: border-color 0.2s; }
-    .search-input:focus { border-color: #66c0f4; }
-    .db-table-scroll { max-height: 400px; overflow-y: auto; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; }
+    /* Genre & Distribution Chips */
+    .genre-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .genre-chip { background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); padding: 6px 12px; border-radius: 20px; font-size: 12px; display: flex; align-items: center; gap: 6px; cursor: pointer; transition: var(--transition); }
+    .genre-chip:hover, .genre-chip.active { background: rgba(102, 192, 244, 0.15); border-color: var(--steam-blue); color: var(--steam-blue); }
+    .genre-count { font-size: 11px; background: rgba(0, 0, 0, 0.4); padding: 1px 6px; border-radius: 10px; color: var(--text-muted); }
 
-    /* Toast Notification */
-    .toast { position: fixed; bottom: 24px; right: 24px; background: #1c2738; color: #fff; border: 1px solid #66c0f4; border-radius: 8px; padding: 14px 20px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); transform: translateY(150%); transition: transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28); z-index: 9999; max-width: 440px; display: flex; align-items: center; gap: 10px; }
+    /* Library Filter Bar */
+    .filter-bar { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; align-items: center; background: rgba(0,0,0,0.3); padding: 12px 16px; border-radius: var(--radius-md); border: 1px solid rgba(255,255,255,0.06); }
+    .search-box { position: relative; flex: 1; min-width: 220px; }
+    .search-input { width: 100%; background: #0c1017; border: 1px solid rgba(255, 255, 255, 0.12); color: #fff; padding: 8px 14px 8px 34px; border-radius: 8px; font-size: 13px; outline: none; transition: var(--transition); }
+    .search-input:focus { border-color: var(--steam-blue); box-shadow: 0 0 0 2px rgba(102, 192, 244, 0.2); }
+    .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 14px; color: var(--text-dim); }
+    .select-input { background: #0c1017; border: 1px solid rgba(255, 255, 255, 0.12); color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 13px; outline: none; cursor: pointer; }
+
+    /* Game Cards Grid */
+    .game-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+    .game-card { background: #141c28; border-radius: var(--radius-md); overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.06); transition: var(--transition); position: relative; display: flex; flex-direction: column; }
+    .game-card:hover { transform: translateY(-4px); border-color: var(--border-focus); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5); }
+    .game-cover-wrap { width: 100%; height: 115px; position: relative; overflow: hidden; background: #0d121a; }
+    .game-cover-wrap img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s; }
+    .game-card:hover .game-cover-wrap img { transform: scale(1.05); }
+    .discount-badge { position: absolute; bottom: 6px; right: 6px; background: #4c6b22; color: #a4d007; font-weight: 800; font-size: 11px; padding: 2px 6px; border-radius: 4px; }
+    .game-card-body { padding: 12px; flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
+    .game-card-title { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .game-card-subtitle { font-size: 11px; color: var(--text-dim); margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .game-card-meta { display: flex; justify-content: space-between; align-items: center; font-size: 12px; padding-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.05); }
+    .game-price { color: var(--steam-green); font-weight: 700; }
+    .game-rating { color: var(--steam-blue); font-size: 11px; }
+
+    /* Co-op Member Selector */
+    .member-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+    .member-select-chip { display: flex; align-items: center; gap: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); padding: 8px 14px; border-radius: 20px; cursor: pointer; transition: var(--transition); user-select: none; font-size: 13px; }
+    .member-select-chip.active { background: rgba(25, 153, 255, 0.2); border-color: var(--steam-blue); color: #fff; }
+    .member-select-chip input { pointer-events: none; }
+
+    /* Cyber Roulette */
+    .roulette-container { text-align: center; padding: 30px 20px; background: radial-gradient(circle at center, rgba(168, 85, 247, 0.15) 0%, transparent 70%); border-radius: var(--radius-lg); border: 1px solid rgba(168, 85, 247, 0.25); margin-bottom: 24px; }
+    .roulette-display { font-size: 28px; font-weight: 800; color: #fff; min-height: 80px; display: flex; flex-direction: column; align-items: center; justify-content: center; margin-bottom: 20px; }
+    .roulette-btn { background: linear-gradient(135deg, #a855f7, #6366f1); color: #fff; font-size: 15px; padding: 12px 30px; border-radius: 30px; border: none; cursor: pointer; font-weight: 700; box-shadow: 0 4px 20px rgba(168, 85, 247, 0.4); transition: var(--transition); }
+    .roulette-btn:hover { transform: scale(1.05); box-shadow: 0 6px 28px rgba(168, 85, 247, 0.6); }
+
+    /* Test & Debug Studio */
+    .db-table-scroll { max-height: 440px; overflow-y: auto; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: var(--radius-md); }
+
+    /* Toast */
+    .toast { position: fixed; bottom: 24px; right: 24px; background: #1c2738; color: #fff; border: 1px solid var(--steam-blue); border-radius: var(--radius-md); padding: 14px 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.6); transform: translateY(150%); transition: transform 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28); z-index: 9999; max-width: 440px; display: flex; align-items: center; gap: 10px; }
     .toast.show { transform: translateY(0); }
-    .toast.success { border-color: #a4d007; }
-    .toast.error { border-color: #eb4d4b; }
-    .toast-icon { font-size: 18px; }
+    .toast.success { border-color: var(--steam-green); }
+    .toast.error { border-color: var(--accent-rose); }
   </style>
 </head>
 <body>
   <div class="container">
-    <!-- Header -->
-    <div class="header">
-      <div>
-        <h1>🎮 Steam 家庭资产全景看板</h1>
-        <span style="font-size: 12px; color: #8f98a0;">AstrBot Steam Family Agent • 实时监控与资产大盘</span>
+    <!-- Top Navigation Header -->
+    <div class="top-nav">
+      <div class="brand">
+        <div class="brand-icon">🎮</div>
+        <div>
+          <div class="brand-title">Steam 家庭资产全景管家 <span style="font-size: 11px; background: rgba(25, 153, 255, 0.2); color: var(--steam-blue); padding: 2px 6px; border-radius: 4px; font-weight: normal;">SFLV v2.0</span></div>
+          <div class="brand-subtitle">AstrBot Steam Family Agent • 实时资产大盘 & 义父贡献榜</div>
+        </div>
       </div>
-      <div class="header-actions">
+
+      <!-- Navigation Tabs -->
+      <div class="nav-tabs">
+        <button class="nav-tab-btn active" onclick="switchTab('tab-overview')">📊 资产总览</button>
+        <button class="nav-tab-btn" onclick="switchTab('tab-library')">🎮 共享游戏库</button>
+        <button class="nav-tab-btn" onclick="switchTab('tab-coop')">🤝 开黑车队雷达</button>
+        <button class="nav-tab-btn" onclick="switchTab('tab-roulette')">🎲 赛博轮盘</button>
+        <button class="nav-tab-btn" onclick="switchTab('tab-studio')">🛠️ 测试管理中心</button>
+      </div>
+
+      <!-- Quick Actions -->
+      <div class="nav-actions">
         <button id="btnSync" class="btn btn-primary" onclick="triggerSync()">
-          <span>⚡ 立即手动同步检查</span>
+          <span>⚡ 立即同步/估值</span>
         </button>
         <button class="btn btn-secondary" onclick="loadData()">
           <span>🔄 刷新</span>
@@ -83,106 +174,273 @@
       </div>
     </div>
 
-    <!-- Stats -->
-    <div class="stat-cards">
-      <div class="stat-card">
-        <div class="stat-title">家庭库总游戏数</div>
-        <div class="stat-value" id="valTotalGames">-- <span style="font-size: 14px; font-weight: normal; color: #8f98a0;">款</span></div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-title">总资产估值 (原价)</div>
-        <div class="stat-value highlight" id="valTotalInitial">¥ --</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-title">折后当前估值</div>
-        <div class="stat-value" id="valTotalCurrent">¥ --</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-title">家庭组总成员数</div>
-        <div class="stat-value" id="valMemberCount">-- <span style="font-size: 14px; font-weight: normal; color: #8f98a0;">位</span></div>
-      </div>
-    </div>
-
-    <!-- Ranking Table -->
-    <div class="section-title">👑 家庭义父资产贡献排行榜</div>
-    <div class="table-container">
-      <table class="ranking-table">
-        <thead>
-          <tr>
-            <th>排名</th>
-            <th>成员 SteamID</th>
-            <th>贡献游戏数</th>
-            <th>资产总原值 (¥)</th>
-            <th>资产折后估值 (¥)</th>
-          </tr>
-        </thead>
-        <tbody id="rankingTableBody">
-          <tr><td colspan="5" style="text-align: center; color: #8f98a0; padding: 20px;">正在加载数据...</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Recent Games Preview -->
-    <div class="section-title">✨ 最近入库游戏封面 (Recent Additions)</div>
-    <div class="game-grid" id="gameGrid">
-      <div style="grid-column: 1 / -1; text-align: center; color: #8f98a0; padding: 24px; background: #141c28; border-radius: 8px;">
-        正在加载最新游戏封面...
-      </div>
-    </div>
-
-    <!-- Dev & Testing Studio -->
-    <div class="dev-box">
-      <div class="dev-header">
-        <div>
-          <div class="dev-title">🛠️ 本地数据库与测试管理中心 (Test & Debug Studio)</div>
-          <div style="font-size: 12px; color: #8f98a0; margin-top: 4px;">
-            按<b>最新入库时间优先排序</b>。可在此查看完整快照库，或手动移出某款游戏以测试「下次同步时触发新入库卡片推送」功能。
-          </div>
+    <!-- TAB 1: 资产总览 -->
+    <div id="tab-overview" class="tab-pane active">
+      <!-- 4 Key Stat Cards -->
+      <div class="stat-cards">
+        <div class="stat-card">
+          <div class="stat-title">家庭库总游戏数 <span>📦</span></div>
+          <div class="stat-value" id="valTotalGames">-- <span style="font-size: 14px; font-weight: normal; color: var(--text-dim);">款</span></div>
+          <div class="stat-desc" id="valValuationStatus">正在读取数据...</div>
         </div>
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <input type="text" id="gameSearch" class="search-input" placeholder="🔍 搜索游戏名称或 AppID..." onkeyup="filterGameTable()">
-          <button class="btn btn-secondary" style="font-size: 12px; color: #ff6b6b; border-color: rgba(235,77,75,0.4);" onclick="resetDatabase()">
-            🧹 重置快照数据库
-          </button>
+        <div class="stat-card accent-green">
+          <div class="stat-title">总资产估值 (原价) <span>💰</span></div>
+          <div class="stat-value green" id="valTotalInitial">¥ --</div>
+          <div class="stat-desc" id="valSavingsDesc">各成员贡献累计总原值</div>
+        </div>
+        <div class="stat-card accent-purple">
+          <div class="stat-title">折后当前估值 <span>🏷️</span></div>
+          <div class="stat-value purple" id="valTotalCurrent">¥ --</div>
+          <div class="stat-desc">按 Steam 实时特惠折扣计算</div>
+        </div>
+        <div class="stat-card accent-amber">
+          <div class="stat-title">家庭组总成员 <span>👥</span></div>
+          <div class="stat-value amber" id="valMemberCount">-- <span style="font-size: 14px; font-weight: normal; color: var(--text-dim);">位</span></div>
+          <div class="stat-desc">共享席位全员已入驻</div>
         </div>
       </div>
 
-      <div class="db-table-scroll">
-        <table class="ranking-table" id="dbGameTable">
+      <!-- Father Contribution Ranking -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">👑 家庭义父资产贡献排行榜 (Father Leaderboard)</div>
+          <span style="font-size: 12px; color: var(--text-muted);">按成员贡献游戏总原值实时排序</span>
+        </div>
+        <table class="ranking-table">
           <thead>
             <tr>
-              <th style="width: 80px;">AppID</th>
-              <th>游戏名称</th>
-              <th>归属成员 (SteamID)</th>
-              <th>价格状态</th>
-              <th style="text-align: center; width: 130px;">操作</th>
+              <th style="width: 70px;">排名</th>
+              <th>成员 SteamID</th>
+              <th>贡献游戏数</th>
+              <th>贡献总原值 (¥)</th>
+              <th>当前折后估值 (¥)</th>
+              <th style="width: 200px;">资产贡献占比</th>
             </tr>
           </thead>
-          <tbody id="dbTableBody">
-            <tr><td colspan="5" style="text-align: center; color: #8f98a0; padding: 20px;">正在读取快照数据...</td></tr>
+          <tbody id="rankingTableBody">
+            <tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">正在计算义父排行...</td></tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- Visual Distribution Breakdown -->
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px;">
+        <div class="section-card" style="margin-bottom: 0;">
+          <div class="section-title">🏷️ 热门游戏类型分布 (Top Genres)</div>
+          <div class="genre-grid" id="genreDistribution">
+            <span style="color: var(--text-dim); font-size: 12px;">加载中...</span>
+          </div>
+        </div>
+        <div class="section-card" style="margin-bottom: 0;">
+          <div class="section-title">💵 游戏价格档位分布 (Price Tiers)</div>
+          <div class="genre-grid" id="priceDistribution">
+            <span style="color: var(--text-dim); font-size: 12px;">加载中...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent 6 Additions -->
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">✨ 最新入库游戏 (Recent Additions)</div>
+          <button class="btn btn-secondary" style="font-size: 12px; padding: 4px 10px;" onclick="switchTab('tab-library')">查看全库 ➔</button>
+        </div>
+        <div class="game-grid" id="overviewRecentGrid">
+          <div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 24px;">正在载入最新入库封面...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: 共享游戏库 -->
+    <div id="tab-library" class="tab-pane">
+      <div class="section-card">
+        <!-- Filter Controls -->
+        <div class="filter-bar">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="libSearch" class="search-input" placeholder="搜索中文名 / 原名 / AppID..." onkeyup="filterLibrary()">
+          </div>
+          <select id="libMemberFilter" class="select-input" onchange="filterLibrary()">
+            <option value="">👤 全部成员共享</option>
+          </select>
+          <select id="libGenreFilter" class="select-input" onchange="filterLibrary()">
+            <option value="">🏷️ 全部游戏类型</option>
+          </select>
+          <select id="libPriceFilter" class="select-input" onchange="filterLibrary()">
+            <option value="">💰 全部价格</option>
+            <option value="free">免费游戏</option>
+            <option value="under50">¥ 50 以内</option>
+            <option value="50to150">¥ 50 - ¥ 150</option>
+            <option value="over150">¥ 150 以上</option>
+          </select>
+          <select id="libSortFilter" class="select-input" onchange="filterLibrary()">
+            <option value="newest">⏱️ 最新入库优先</option>
+            <option value="price_desc">💰 原价从高到低</option>
+            <option value="discount_desc">🏷️ 折扣从大到小</option>
+            <option value="rating_desc">⭐ 好评率最高</option>
+            <option value="name_asc">🔤 游戏名称 A-Z</option>
+          </select>
+          <button class="btn btn-secondary" onclick="toggleLibView()">
+            <span id="libViewIcon">📑 切换表格视图</span>
+          </button>
+        </div>
+
+        <!-- Library Count Info -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; font-size: 12px; color: var(--text-muted);">
+          <span id="libFilterCount">共找到 0 款游戏</span>
+          <span>点击游戏封面可跳转 Steam 商店详情页</span>
+        </div>
+
+        <!-- Grid View -->
+        <div class="game-grid" id="libGrid"></div>
+
+        <!-- Table View (Hidden by default) -->
+        <div id="libTableView" style="display: none;" class="db-table-scroll">
+          <table class="ranking-table">
+            <thead>
+              <tr>
+                <th style="width: 80px;">AppID</th>
+                <th>游戏名称</th>
+                <th>类型标签</th>
+                <th>归属义父</th>
+                <th>原价</th>
+                <th>当前折后价</th>
+                <th>好评率</th>
+                <th style="text-align: center;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="libTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: 开黑车队雷达 -->
+    <div id="tab-coop" class="tab-pane">
+      <div class="section-card">
+        <div class="section-header">
+          <div>
+            <div class="section-title">🤝 开黑车队雷达 (Multiplayer & Co-op Matcher)</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+              勾选 2 位或多位家庭成员，雷达将立即筛选出大家<b>共同拥有的联机/合作游戏</b>，极速组队开黑！
+            </div>
+          </div>
+        </div>
+
+        <div class="member-chips" id="coopMemberChips">
+          <!-- Populated by JS -->
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin: 16px 0; font-size: 13px; color: var(--text-muted);">
+          <span id="coopMatchResult">请至少选择 2 位成员开始匹配...</span>
+        </div>
+
+        <div class="game-grid" id="coopGrid">
+          <div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 40px; background: rgba(0,0,0,0.2); border-radius: var(--radius-md);">
+            👈 请在上方点击选中至少两位成员
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: 赛博轮盘 -->
+    <div id="tab-roulette" class="tab-pane">
+      <div class="roulette-container">
+        <h2 style="font-size: 22px; margin-bottom: 8px; color: #fff;">🎰 今晚玩什么？赛博家庭轮盘</h2>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 20px;">
+          治疗游戏选择困难症！从家庭共享库中随机抽选一款心动好游戏。
+        </p>
+
+        <div style="display: flex; justify-content: center; gap: 10px; margin-bottom: 24px;">
+          <select id="rouletteGenreSelect" class="select-input" style="width: 180px;">
+            <option value="">🎲 全类型随机</option>
+          </select>
+        </div>
+
+        <div class="roulette-display" id="rouletteResult">
+          <div style="font-size: 32px; color: var(--steam-blue);">🎮 点击下方按钮开始抽选</div>
+          <div style="font-size: 13px; color: var(--text-dim); margin-top: 6px;">从全库共享游戏中为您智能选品</div>
+        </div>
+
+        <button class="roulette-btn" id="btnRoll" onclick="spinRoulette()">
+          ✨ 启动赛博轮盘
+        </button>
+
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 13px; color: var(--text-muted);">
+          💡 也可以在群内直接发送 <code style="color: var(--steam-blue);">/steam_roll [类型]</code> 或 <code style="color: var(--steam-blue);">/steam_ai 推荐肉鸽游戏</code> 召唤 AI 专属管家！
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: 本地测试管理中心 -->
+    <div id="tab-studio" class="tab-pane">
+      <div class="section-card">
+        <div class="section-header">
+          <div>
+            <div class="section-title">🛠️ 本地数据库与推送测试中心 (Test & Debug Studio)</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+              按<b>最新入库时间优先排序</b>。可在此查看完整快照库，或手动移出某款游戏以测试「下次同步时触发新入库卡片推送」功能。
+            </div>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <input type="text" id="studioSearch" class="search-input" style="width: 220px;" placeholder="🔍 搜索游戏名称或 AppID..." onkeyup="filterStudioTable()">
+            <button class="btn btn-secondary" style="font-size: 12px; color: #ff6b6b; border-color: rgba(235,77,75,0.4);" onclick="resetDatabase()">
+              🧹 重置快照数据库
+            </button>
+          </div>
+        </div>
+
+        <div class="db-table-scroll">
+          <table class="ranking-table" id="dbGameTable">
+            <thead>
+              <tr>
+                <th style="width: 80px;">AppID</th>
+                <th>游戏名称</th>
+                <th>归属成员 (SteamID)</th>
+                <th>价格状态</th>
+                <th style="text-align: center; width: 130px;">操作</th>
+              </tr>
+            </thead>
+            <tbody id="studioTableBody">
+              <tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 20px;">正在读取快照数据...</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Toast -->
   <div id="toast" class="toast">
-    <div id="toastIcon" class="toast-icon">ℹ️</div>
+    <div id="toastIcon" style="font-size: 18px;">ℹ️</div>
     <div id="toastMsg" style="font-size: 13px; line-height: 1.4;">提示消息</div>
   </div>
 
   <script>
+    let globalData = null;
     let globalSnapshotApps = [];
+    let isTableView = false;
+    let selectedCoopMembers = new Set();
+    const MEMBER_COLORS = ['#38bdf8', '#a855f7', '#34d399', '#fbbf24', '#f87171', '#818cf8'];
 
-    // Helper to get bridge (AstrBot automatically injects window.AstrBotPluginPage)
+    // Tab Switching
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+      document.querySelectorAll('.nav-tab-btn').forEach(b => b.classList.remove('active'));
+      const target = document.getElementById(tabId);
+      if (target) target.classList.add('active');
+      const idx = ['tab-overview', 'tab-library', 'tab-coop', 'tab-roulette', 'tab-studio'].indexOf(tabId);
+      if (idx >= 0) {
+        document.querySelectorAll('.nav-tab-btn')[idx].classList.add('active');
+      }
+    }
+
+    // Bridge Helper
     async function getBridge(maxRetries = 25) {
       for (let i = 0; i < maxRetries; i++) {
         if (window.AstrBotPluginPage) {
           if (typeof window.AstrBotPluginPage.ready === "function") {
-            try {
-              await window.AstrBotPluginPage.ready();
-            } catch (e) {}
+            try { await window.AstrBotPluginPage.ready(); } catch (e) {}
           }
           return window.AstrBotPluginPage;
         }
@@ -191,11 +449,10 @@
       return window.AstrBotPluginPage || null;
     }
 
-    // AstrBot Plugin Pages Standard Requester
+    // Standard API Requester
     async function apiRequest(endpoint, method = "GET", payload = {}) {
       const cleanEndpoint = endpoint.replace(/^\/+/, "");
       const bridge = await getBridge();
-
       if (bridge) {
         try {
           if (method === "GET" && typeof bridge.apiGet === "function") {
@@ -218,7 +475,7 @@
         }
       }
 
-      // Fallback for direct browser testing outside AstrBot
+      // Standalone Fallback
       try {
         const hostMatch = window.location.href.match(/^(https?:\/\/[^\/]+)/);
         const host = hostMatch ? hostMatch[1] : "";
@@ -234,8 +491,7 @@
           return json && json.data !== undefined ? json.data : json;
         }
       } catch (e) {}
-
-      throw new Error("无法连接到插件接口。请在 AstrBot 控制台中点击「重载插件」以加载最新接口。");
+      throw new Error("无法连接到后端接口。请在 AstrBot 控制台中点击「重载插件」以加载最新接口。");
     }
 
     function showToast(msg, isSuccess = true) {
@@ -248,99 +504,345 @@
       setTimeout(() => { toast.className = "toast"; }, 5000);
     }
 
+    // Main Data Loader
     async function loadData() {
       try {
         const raw = await apiRequest("data", "GET");
         if (!raw) return;
-
         const data = (raw && raw.data && typeof raw.data === "object" && !Array.isArray(raw.data) && ("total_games" in raw.data || "all_snapshot_apps" in raw.data))
           ? raw.data
           : raw;
-
-        const totalGames = data.total_games || 0;
-        const cachedCount = data.cached_games_count !== undefined ? data.cached_games_count : totalGames;
-
-        let gameSubtitle = `${totalGames} <span style="font-size: 13px; font-weight: normal; color: #8f98a0;">款`;
-        if (cachedCount < totalGames && totalGames > 0) {
-          gameSubtitle += ` (已估值 ${cachedCount}/${totalGames} 款)`;
-        } else {
-          gameSubtitle += `</span>`;
-        }
-        document.getElementById("valTotalGames").innerHTML = gameSubtitle;
-
-        let initValText = `¥ ${data.total_initial_value || 0}`;
-        let currValText = `¥ ${data.total_current_value || 0}`;
-        if (cachedCount < totalGames && totalGames > 0) {
-          initValText += ` <span style="font-size: 11px; font-weight: normal; color: #ffaa00;">(后台估值中)</span>`;
-          currValText += ` <span style="font-size: 11px; font-weight: normal; color: #ffaa00;">(后台估值中)</span>`;
-        }
-        document.getElementById("valTotalInitial").innerHTML = initValText;
-        document.getElementById("valTotalCurrent").innerHTML = currValText;
-        document.getElementById("valMemberCount").innerHTML = `${data.member_count || 0} <span style="font-size: 14px; font-weight: normal; color: #8f98a0;">位</span>`;
-
-        // Render Rankings
-        const rankBody = document.getElementById("rankingTableBody");
-        if (data.rankings && data.rankings.length > 0) {
-          rankBody.innerHTML = data.rankings.map((r, i) => `
-            <tr>
-              <td><b style="color: #66c0f4;">#${i + 1}</b></td>
-              <td><code>${r.steamid}</code></td>
-              <td><b>${r.game_count}</b> 款</td>
-              <td style="color: #a4d007; font-weight: 700;">¥ ${r.total_initial_price}</td>
-              <td>¥ ${r.total_current_price}</td>
-            </tr>
-          `).join("");
-        } else {
-          rankBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #8f98a0; padding: 20px;">暂无排行数据，点击上方「立即手动同步检查」拉取数据</td></tr>`;
-        }
-
-        // Render Recent Games Grid (newest first)
-        const grid = document.getElementById("gameGrid");
-        if (data.recent_games && data.recent_games.length > 0) {
-          grid.innerHTML = data.recent_games.map(g => {
-            const priceLabel = g.final_price > 0 
-              ? `¥ ${g.final_price}` 
-              : (g.is_cached ? '免费 / 已入库' : '<span style="color:#ffaa00;">⏳ 估值中...</span>');
-            return `
-              <div class="game-card">
-                <img src="${g.header_image}" alt="Cover" onerror="this.src='https://cdn.akamai.steamstatic.com/steam/apps/${g.appid}/header.jpg'">
-                <div class="game-card-info">
-                  <div class="game-card-title" title="${g.name}">${g.name}</div>
-                  <div class="game-card-meta">
-                    <span>${priceLabel}</span>
-                    <span style="color: #66c0f4; font-size: 11px;">好评率: ${g.positive_rate}%</span>
-                  </div>
-                </div>
-              </div>
-            `;
-          }).join("");
-        } else {
-          grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: #8f98a0; padding: 24px; background: #141c28; border-radius: 8px;">暂无游戏封面数据。点击上方「立即手动同步检查」开始同步！</div>`;
-        }
-
-        // Render Dev DB Table
+        globalData = data;
         globalSnapshotApps = data.all_snapshot_apps || [];
-        renderDbTable(globalSnapshotApps);
+
+        renderOverview(data);
+        renderLibraryOptions(data);
+        filterLibrary();
+        renderCoopMembers(data);
+        renderRouletteOptions(data);
+        renderStudioTable(globalSnapshotApps);
       } catch (err) {
         showToast("加载数据失败: " + err.message, false);
       }
     }
 
-    function renderDbTable(apps) {
-      const dbBody = document.getElementById("dbTableBody");
+    // 1. Render Overview Tab
+    function renderOverview(data) {
+      const totalGames = data.total_games || 0;
+      const cachedCount = data.cached_games_count !== undefined ? data.cached_games_count : totalGames;
+
+      document.getElementById("valTotalGames").innerHTML = `${totalGames} <span style="font-size: 14px; font-weight: normal; color: var(--text-dim);">款</span>`;
+      if (cachedCount < totalGames && totalGames > 0) {
+        document.getElementById("valValuationStatus").innerHTML = `⏳ 已估值 <b style="color:var(--steam-blue);">${cachedCount}</b>/${totalGames} 款 (后台持续补充中...)`;
+      } else {
+        document.getElementById("valValuationStatus").innerText = `✅ 全库 ${totalGames} 款游戏已完成 100% 估值`;
+      }
+
+      document.getElementById("valTotalInitial").innerText = `¥ ${data.total_initial_value || 0}`;
+      document.getElementById("valTotalCurrent").innerText = `¥ ${data.total_current_value || 0}`;
+      document.getElementById("valMemberCount").innerHTML = `${data.member_count || 0} <span style="font-size: 14px; font-weight: normal; color: var(--text-dim);">位</span>`;
+
+      // Rankings
+      const rankBody = document.getElementById("rankingTableBody");
+      if (data.rankings && data.rankings.length > 0) {
+        rankBody.innerHTML = data.rankings.map((r, i) => {
+          const rankPillClass = i === 0 ? 'rank-1' : (i === 1 ? 'rank-2' : (i === 2 ? 'rank-3' : 'rank-other'));
+          const rankIcon = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : `#${i + 1}`));
+          const memberColor = MEMBER_COLORS[i % MEMBER_COLORS.length];
+          return `
+            <tr>
+              <td><span class="rank-pill ${rankPillClass}">${rankIcon}</span></td>
+              <td><code style="color: ${memberColor}; font-weight: 700;">${r.steamid}</code></td>
+              <td><b>${r.game_count}</b> 款</td>
+              <td style="color: var(--steam-green); font-weight: 700;">¥ ${r.total_initial_price}</td>
+              <td>¥ ${r.total_current_price}</td>
+              <td>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
+                  <span>贡献率</span>
+                  <span style="font-weight: 700; color: ${memberColor};">${r.percentage}%</span>
+                </div>
+                <div class="progress-bar-bg">
+                  <div class="progress-bar-fill" style="width: ${r.percentage}%; background: ${memberColor};"></div>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join("");
+      } else {
+        rankBody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted); padding: 24px;">暂无排行数据，点击上方「立即同步/估值」拉取数据</td></tr>`;
+      }
+
+      // Genre Distribution Chips
+      const genreBox = document.getElementById("genreDistribution");
+      if (data.top_genres && data.top_genres.length > 0) {
+        genreBox.innerHTML = data.top_genres.map(g => `
+          <div class="genre-chip" onclick="quickFilterGenre('${g.genre}')">
+            <span>${g.genre}</span>
+            <span class="genre-count">${g.count}</span>
+          </div>
+        `).join("");
+      } else {
+        genreBox.innerHTML = `<span style="color: var(--text-dim); font-size: 12px;">暂无标签数据</span>`;
+      }
+
+      // Price Tier Distribution
+      const priceBox = document.getElementById("priceDistribution");
+      if (data.price_stats) {
+        const ps = data.price_stats;
+        priceBox.innerHTML = `
+          <div class="genre-chip"><span>免费 / 赠送</span><span class="genre-count">${ps.free || 0}</span></div>
+          <div class="genre-chip"><span>¥ 50 内轻量</span><span class="genre-count">${ps.under50 || 0}</span></div>
+          <div class="genre-chip"><span>¥ 50 - ¥ 150 中端</span><span class="genre-count">${ps.price_50to150 || ps["50to150"] || 0}</span></div>
+          <div class="genre-chip"><span>¥ 150 - ¥ 300 热门</span><span class="genre-count">${ps["150to300"] || 0}</span></div>
+          <div class="genre-chip"><span>¥ 300+ 3A大作</span><span class="genre-count">${ps.over300 || 0}</span></div>
+        `;
+      }
+
+      // Overview 6 Recent Cards
+      const recentGrid = document.getElementById("overviewRecentGrid");
+      if (data.recent_games && data.recent_games.length > 0) {
+        recentGrid.innerHTML = data.recent_games.slice(0, 6).map(g => renderGameCardHTML(g)).join("");
+      } else {
+        recentGrid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 24px;">暂无最新封面，点击上方按钮开始同步。</div>`;
+      }
+    }
+
+    // Helper for Game Card HTML
+    function renderGameCardHTML(g) {
+      const priceText = g.final_price > 0 ? `¥ ${g.final_price}` : (g.is_cached ? '免费 / 已入库' : '<span style="color:#f59e0b;">⏳ 估值中</span>');
+      const discountPill = g.discount_percent > 0 ? `<span class="discount-badge">-${g.discount_percent}%</span>` : '';
+      const storeUrl = `https://store.steampowered.com/app/${g.appid}`;
+      return `
+        <div class="game-card" onclick="window.open('${storeUrl}', '_blank')" style="cursor: pointer;">
+          <div class="game-cover-wrap">
+            <img src="${g.header_image}" alt="Cover" loading="lazy" onerror="this.src='https://cdn.akamai.steamstatic.com/steam/apps/${g.appid}/header.jpg'">
+            ${discountPill}
+          </div>
+          <div class="game-card-body">
+            <div>
+              <div class="game-card-title" title="${g.name}">${g.name}</div>
+              <div class="game-card-subtitle" title="${g.original_name}">${g.original_name && g.original_name !== g.name ? g.original_name : g.owners}</div>
+            </div>
+            <div class="game-card-meta">
+              <span class="game-price">${priceText}</span>
+              <span class="game-rating">⭐ ${g.positive_rate}% 好评</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // 2. Library Tab Logic
+    function renderLibraryOptions(data) {
+      // Member Filter
+      const memberSelect = document.getElementById("libMemberFilter");
+      if (data.rankings) {
+        memberSelect.innerHTML = `<option value="">👤 全部成员共享 (${data.total_games} 款)</option>` +
+          data.rankings.map(r => `<option value="${r.steamid}">👤 义父 ${r.steamid} (${r.game_count}款)</option>`).join("");
+      }
+
+      // Genre Filter
+      const genreSelect = document.getElementById("libGenreFilter");
+      if (data.top_genres) {
+        genreSelect.innerHTML = `<option value="">🏷️ 全部游戏类型</option>` +
+          data.top_genres.map(g => `<option value="${g.genre}">🏷️ ${g.genre} (${g.count})</option>`).join("");
+      }
+    }
+
+    function quickFilterGenre(genre) {
+      switchTab('tab-library');
+      document.getElementById("libGenreFilter").value = genre;
+      filterLibrary();
+    }
+
+    function filterLibrary() {
+      const q = (document.getElementById("libSearch").value || "").toLowerCase().trim();
+      const member = document.getElementById("libMemberFilter").value;
+      const genre = document.getElementById("libGenreFilter").value;
+      const price = document.getElementById("libPriceFilter").value;
+      const sort = document.getElementById("libSortFilter").value;
+
+      let filtered = globalSnapshotApps.filter(app => {
+        if (q) {
+          const matchName = app.name && app.name.toLowerCase().includes(q);
+          const matchOrig = app.original_name && app.original_name.toLowerCase().includes(q);
+          const matchId = String(app.appid).includes(q);
+          if (!matchName && !matchOrig && !matchId) return false;
+        }
+        if (member && app.owner_steamids && !app.owner_steamids.includes(member)) return false;
+        if (genre && app.genres && !app.genres.includes(genre)) return false;
+        if (price) {
+          if (price === "free" && app.final_price !== 0) return false;
+          if (price === "under50" && (app.final_price <= 0 || app.final_price >= 50)) return false;
+          if (price === "50to150" && (app.final_price < 50 || app.final_price > 150)) return false;
+          if (price === "over150" && app.final_price < 150) return false;
+        }
+        return true;
+      });
+
+      // Sorting
+      if (sort === "newest") {
+        filtered.sort((a, b) => (b.rt_time_acquired || 0) - (a.rt_time_acquired || 0) || b.appid - a.appid);
+      } else if (sort === "price_desc") {
+        filtered.sort((a, b) => (b.initial_price || 0) - (a.initial_price || 0));
+      } else if (sort === "discount_desc") {
+        filtered.sort((a, b) => (b.discount_percent || 0) - (a.discount_percent || 0));
+      } else if (sort === "rating_desc") {
+        filtered.sort((a, b) => (b.positive_rate || 0) - (a.positive_rate || 0));
+      } else if (sort === "name_asc") {
+        filtered.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+      }
+
+      document.getElementById("libFilterCount").innerText = `共找到 ${filtered.length} 款游戏`;
+
+      const grid = document.getElementById("libGrid");
+      const tableBody = document.getElementById("libTableBody");
+
+      if (filtered.length === 0) {
+        grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 40px;">🔍 未找到符合条件的游戏</div>`;
+        tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 30px;">未找到符合条件的游戏</td></tr>`;
+        return;
+      }
+
+      // Render Grid (Paginate first 60 for super speed)
+      grid.innerHTML = filtered.slice(0, 60).map(g => renderGameCardHTML(g)).join("");
+
+      // Render Table
+      tableBody.innerHTML = filtered.slice(0, 100).map(g => `
+        <tr>
+          <td><code>${g.appid}</code></td>
+          <td><b>${g.name}</b> ${g.original_name && g.original_name !== g.name ? `<span style="color:var(--text-dim); font-size:11px;">(${g.original_name})</span>` : ''}</td>
+          <td><span style="font-size: 11px; color: var(--text-muted);">${(g.genres || []).slice(0, 2).join(", ")}</span></td>
+          <td><span style="font-size: 12px; color: var(--steam-blue);">${g.owners}</span></td>
+          <td>¥ ${g.initial_price}</td>
+          <td style="color: var(--steam-green); font-weight: 700;">¥ ${g.final_price}</td>
+          <td>⭐ ${g.positive_rate}%</td>
+          <td style="text-align: center;">
+            <button class="btn btn-secondary" style="font-size: 11px; padding: 3px 8px;" onclick="window.open('https://store.steampowered.com/app/${g.appid}', '_blank')">商店 ↗</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    function toggleLibView() {
+      isTableView = !isTableView;
+      document.getElementById("libGrid").style.display = isTableView ? "none" : "grid";
+      document.getElementById("libTableView").style.display = isTableView ? "block" : "none";
+      document.getElementById("libViewIcon").innerText = isTableView ? "🖼️ 切换卡片视图" : "📑 切换表格视图";
+    }
+
+    // 3. Co-op Radar Logic
+    function renderCoopMembers(data) {
+      const container = document.getElementById("coopMemberChips");
+      if (!data.rankings) return;
+      container.innerHTML = data.rankings.map((r, i) => `
+        <div class="member-select-chip" id="chip-${r.steamid}" onclick="toggleCoopMember('${r.steamid}')">
+          <input type="checkbox" id="chk-${r.steamid}">
+          <span>👤 ${r.steamid} (${r.game_count} 款)</span>
+        </div>
+      `).join("");
+    }
+
+    function toggleCoopMember(steamid) {
+      if (selectedCoopMembers.has(steamid)) {
+        selectedCoopMembers.delete(steamid);
+        document.getElementById(`chip-${steamid}`).classList.remove('active');
+        document.getElementById(`chk-${steamid}`).checked = false;
+      } else {
+        selectedCoopMembers.add(steamid);
+        document.getElementById(`chip-${steamid}`).classList.add('active');
+        document.getElementById(`chk-${steamid}`).checked = true;
+      }
+      computeCoopMatches();
+    }
+
+    function computeCoopMatches() {
+      const resultText = document.getElementById("coopMatchResult");
+      const grid = document.getElementById("coopGrid");
+
+      if (selectedCoopMembers.size < 2) {
+        resultText.innerText = "请至少勾选 2 位成员开始匹配共同拥有的游戏...";
+        grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 40px; background: rgba(0,0,0,0.2); border-radius: var(--radius-md);">👈 请在上方点击选中至少两位成员</div>`;
+        return;
+      }
+
+      const selectedList = Array.from(selectedCoopMembers);
+      // Filter games that are owned by ALL selected members
+      const matched = globalSnapshotApps.filter(app => {
+        if (!app.owner_steamids) return false;
+        return selectedList.every(m => app.owner_steamids.includes(m));
+      });
+
+      resultText.innerHTML = `已选择 <b>${selectedList.length}</b> 位成员，共同拥有 <b>${matched.length}</b> 款游戏：`;
+
+      if (matched.length === 0) {
+        grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 40px; background: rgba(0,0,0,0.2); border-radius: var(--radius-md);">暂无共同拥有的游戏（家庭组共享库存中每款游戏只能一人同时在线游玩，若要联机需各自拥有独立副本）</div>`;
+        return;
+      }
+
+      grid.innerHTML = matched.map(g => renderGameCardHTML(g)).join("");
+    }
+
+    // 4. Cyber Roulette Logic
+    function renderRouletteOptions(data) {
+      const select = document.getElementById("rouletteGenreSelect");
+      if (data.top_genres) {
+        select.innerHTML = `<option value="">🎲 全类型随机</option>` +
+          data.top_genres.map(g => `<option value="${g.genre}">🏷️ 随机 ${g.genre}</option>`).join("");
+      }
+    }
+
+    function spinRoulette() {
+      const genre = document.getElementById("rouletteGenreSelect").value;
+      const candidates = globalSnapshotApps.filter(app => !genre || (app.genres && app.genres.includes(genre)));
+      if (candidates.length === 0) {
+        showToast("未找到该标签下的游戏", false);
+        return;
+      }
+
+      const btn = document.getElementById("btnRoll");
+      const res = document.getElementById("rouletteResult");
+      btn.disabled = true;
+      let count = 0;
+      const interval = setInterval(() => {
+        const randomItem = candidates[Math.floor(Math.random() * candidates.length)];
+        res.innerHTML = `
+          <div style="font-size: 26px; color: #fff;">🎮 《${randomItem.name}》</div>
+          <div style="font-size: 13px; color: var(--steam-blue); margin-top: 6px;">归属义父: ${randomItem.owners} • 价格: ¥ ${randomItem.final_price}</div>
+        `;
+        count++;
+        if (count > 20) {
+          clearInterval(interval);
+          btn.disabled = false;
+          const finalItem = candidates[Math.floor(Math.random() * candidates.length)];
+          res.innerHTML = `
+            <div style="font-size: 30px; font-weight: 800; color: #a4d007; text-shadow: 0 0 20px rgba(164,208,7,0.5);">🎉 选中了！《${finalItem.name}》</div>
+            <div style="font-size: 14px; color: #fff; margin-top: 8px;">
+              归属义父: <b style="color:var(--steam-blue);">${finalItem.owners}</b> • 好评率: <b>${finalItem.positive_rate}%</b>
+              <button class="btn btn-primary" style="margin-left: 10px; font-size: 11px; padding: 3px 10px;" onclick="window.open('https://store.steampowered.com/app/${finalItem.appid}', '_blank')">进入商店 ↗</button>
+            </div>
+          `;
+          showToast(`已抽取游戏：《${finalItem.name}》！今晚就玩它了！`, true);
+        }
+      }, 70);
+    }
+
+    // 5. Test & Debug Studio Logic
+    function renderStudioTable(apps) {
+      const dbBody = document.getElementById("studioTableBody");
       if (apps && apps.length > 0) {
         dbBody.innerHTML = apps.map(app => {
-          let priceDisplay = `<span style="color: #a4d007; font-weight: 700;">¥ ${app.final_price}</span>`;
+          let priceDisplay = `<span style="color: var(--steam-green); font-weight: 700;">¥ ${app.final_price}</span>`;
           if (app.final_price === 0) {
             priceDisplay = app.is_cached 
-              ? `<span style="color: #8f98a0;">免费/已下架 (¥ 0)</span>` 
-              : `<span style="color: #ffaa00; font-size: 12px;">⏳ 后台估值中...</span>`;
+              ? `<span style="color: var(--text-dim);">免费/已下架 (¥ 0)</span>` 
+              : `<span style="color: var(--accent-amber); font-size: 12px;">⏳ 后台估值中...</span>`;
           }
           return `
             <tr id="row-${app.appid}">
               <td><code>${app.appid}</code></td>
-              <td><b>${app.name}</b> ${app.original_name && app.original_name !== app.name ? `<span style="color: #8f98a0; font-size: 11px;">(${app.original_name})</span>` : ''}</td>
-              <td><span style="color: #8f98a0; font-size: 12px;">${app.owners}</span></td>
+              <td><b>${app.name}</b> ${app.original_name && app.original_name !== app.name ? `<span style="color:var(--text-dim); font-size: 11px;">(${app.original_name})</span>` : ''}</td>
+              <td><span style="color: var(--text-muted); font-size: 12px;">${app.owners}</span></td>
               <td>${priceDisplay}</td>
               <td style="text-align: center;">
                 <button class="btn btn-danger" onclick="removeApp(${app.appid}, '${app.name.replace(/'/g, "\\'")}')">
@@ -351,8 +853,19 @@
           `;
         }).join("");
       } else {
-        dbBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #8f98a0; padding: 20px;">暂无快照数据</td></tr>`;
+        dbBody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--text-muted); padding: 20px;">暂无快照数据</td></tr>`;
       }
+    }
+
+    function filterStudioTable() {
+      const q = document.getElementById("studioSearch").value.toLowerCase();
+      const filtered = globalSnapshotApps.filter(app => 
+        String(app.appid).includes(q) ||
+        (app.name && app.name.toLowerCase().includes(q)) ||
+        (app.original_name && app.original_name.toLowerCase().includes(q)) ||
+        (app.owners && app.owners.includes(q))
+      );
+      renderStudioTable(filtered);
     }
 
     async function triggerSync() {
@@ -367,18 +880,18 @@
         showToast("同步请求失败: " + err.message, false);
       } finally {
         btn.disabled = false;
-        btn.innerHTML = "⚡ 立即手动同步检查";
+        btn.innerHTML = "⚡ 立即同步/估值";
       }
     }
 
     async function removeApp(appid, name) {
-      if (!confirm(`确定要从当前本地数据库快照中移出《${name}》(AppID: ${appid}) 吗？\n\n移出后点击「立即手动同步」，插件将检测到此游戏为【全新入库游戏】，并自动触发卡片渲染和消息推送！`)) {
+      if (!confirm(`确定要从当前本地数据库快照中移出《${name}》(AppID: ${appid}) 吗？\n\n移出后点击「立即同步」，插件将检测到此游戏为【全新入库游戏】，并自动触发卡片渲染和消息推送！`)) {
         return;
       }
       try {
         const data = await apiRequest("db/remove_app", "POST", { appid: appid });
         if (data && data.success !== false) {
-          showToast(`已成功将《${name}》从本地快照中移出！现在点击【立即手动同步】，将立即触发新游戏推送！`, true);
+          showToast(`已成功将《${name}》从本地快照中移出！现在点击【立即同步】，将立即触发新游戏推送！`, true);
           const row = document.getElementById(`row-${appid}`);
           if (row) row.style.display = "none";
         } else {
@@ -400,17 +913,6 @@
       } catch (err) {
         showToast("重置失败: " + err.message, false);
       }
-    }
-
-    function filterGameTable() {
-      const q = document.getElementById("gameSearch").value.toLowerCase();
-      const filtered = globalSnapshotApps.filter(app => 
-        String(app.appid).includes(q) ||
-        (app.name && app.name.toLowerCase().includes(q)) ||
-        (app.original_name && app.original_name.toLowerCase().includes(q)) ||
-        (app.owners && app.owners.includes(q))
-      );
-      renderDbTable(filtered);
     }
 
     // Auto-load on ready
