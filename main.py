@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import tempfile
+from pathlib import Path
 
 try:
     import astrbot.api.message_components as Comp
@@ -104,6 +105,27 @@ except (ImportError, ValueError):
 logger = logging.getLogger(__name__)
 
 
+def _get_db_path() -> str:
+    """获取 AstrBot 官方规范持久化数据库路径，兼容各种部署模式。"""
+    try:
+        from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+
+        data_dir = get_astrbot_data_path() / "plugin_data" / "astrbot_plugin_steam_family"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        target_db = data_dir / "steam_family.db"
+        legacy_db = Path("data/steam_family.db")
+        if legacy_db.exists() and not target_db.exists():
+            try:
+                import shutil
+
+                shutil.copy2(legacy_db, target_db)
+            except Exception:
+                pass
+        return str(target_db)
+    except Exception:
+        return "data/steam_family.db"
+
+
 @register(
     "astrbot_plugin_steam_family",
     "LunarFlow42",
@@ -130,7 +152,7 @@ class SteamFamilyPlugin(Star):
         self.client = SteamFamilyClient(
             proxy=self.config.proxy, timeout=self.config.request_timeout
         )
-        self.storage = FamilyStorage("data/steam_family.db")
+        self.storage = FamilyStorage(_get_db_path())
         self.diff_engine = FamilyDiffEngine()
         self.renderer = CardRenderer()
         self.agent_tools = SteamAgentTools(self.storage)
