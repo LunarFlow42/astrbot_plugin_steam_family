@@ -504,6 +504,38 @@
       setTimeout(() => { toast.className = "toast"; }, 5000);
     }
 
+    let pollTimer = null;
+    function checkAndStartPolling(data) {
+      const total = data.total_games || 0;
+      const cached = data.cached_games_count !== undefined ? data.cached_games_count : total;
+      if (cached < total && total > 0) {
+        if (!pollTimer) {
+          pollTimer = setInterval(async () => {
+            try {
+              const raw = await apiRequest("data", "GET");
+              if (raw) {
+                const d = (raw && raw.data && typeof raw.data === "object" && !Array.isArray(raw.data) && ("total_games" in raw.data || "all_snapshot_apps" in raw.data)) ? raw.data : raw;
+                globalData = d;
+                globalSnapshotApps = d.all_snapshot_apps || [];
+                renderOverview(d);
+                if ((d.cached_games_count || 0) >= (d.total_games || 0)) {
+                  clearInterval(pollTimer);
+                  pollTimer = null;
+                  filterLibrary();
+                  renderStudioTable(globalSnapshotApps);
+                }
+              }
+            } catch (e) {}
+          }, 1800);
+        }
+      } else {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      }
+    }
+
     // Main Data Loader
     async function loadData() {
       try {
@@ -521,6 +553,7 @@
         renderCoopMembers(data);
         renderRouletteOptions(data);
         renderStudioTable(globalSnapshotApps);
+        checkAndStartPolling(data);
       } catch (err) {
         showToast("加载数据失败: " + err.message, false);
       }

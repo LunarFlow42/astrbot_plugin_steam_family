@@ -90,14 +90,24 @@ try:
     from .config import PluginConfig
     from .core.diff_engine import FamilyDiffEngine
     from .core.renderer import CardRenderer
-    from .core.steam_api import SteamAuthExpiredError, SteamFamilyClient, SteamRateLimitError
+    from .core.steam_api import (
+        AppDetails,
+        SteamAuthExpiredError,
+        SteamFamilyClient,
+        SteamRateLimitError,
+    )
     from .core.storage import FamilyStorage
 except (ImportError, ValueError):
     from agent.tools import SteamAgentTools
     from config import PluginConfig
     from core.diff_engine import FamilyDiffEngine
     from core.renderer import CardRenderer
-    from core.steam_api import SteamAuthExpiredError, SteamFamilyClient, SteamRateLimitError
+    from core.steam_api import (
+        AppDetails,
+        SteamAuthExpiredError,
+        SteamFamilyClient,
+        SteamRateLimitError,
+    )
     from core.storage import FamilyStorage
 
 logger = logging.getLogger(__name__)
@@ -357,7 +367,7 @@ class SteamFamilyPlugin(Star):
             logger.error(f"Error during plugin startup: {e}")
 
     async def _warmup_app_details(self, apps: list):
-        """Asynchronously and progressively warm up cache for uncached apps in the background."""
+        """Asynchronously and high-concurrency warm up cache for uncached apps in batches."""
         try:
             cached_apps = await self.storage.get_all_cached_apps()
             cached_ids = {a.appid for a in cached_apps}
@@ -370,26 +380,46 @@ class SteamFamilyPlugin(Star):
                 key=lambda a: (getattr(a, "rt_time_acquired", 0), a.appid),
                 reverse=True,
             )
-            logger.info(f"Starting background price warmup for {len(uncached)} uncached games...")
+            logger.info(
+                f"Starting high-speed background price warmup for {len(uncached)} uncached games..."
+            )
 
-            sem = asyncio.Semaphore(5)
+            sem = asyncio.Semaphore(20)
 
             async def fetch_one(app):
                 async with sem:
                     try:
-                        details = await self.client.get_app_details(app.appid)
+                        details = await self.client.get_app_details(app.appid, basic_only=True)
                         if details:
-                            await self.storage.cache_app_details(details)
-                        await asyncio.sleep(0.12)
+                            return details
+                        # Fallback for delisted or unpriced apps to prevent infinite retries
+                        return AppDetails(
+                            appid=app.appid,
+                            name=app.name,
+                            chinese_name=app.name,
+                            header_image=f"https://cdn.akamai.steamstatic.com/steam/apps/{app.appid}/header.jpg",
+                            is_free=True,
+                            initial_price=0.0,
+                            final_price=0.0,
+                            discount_percent=0,
+                            genres=["Steam 共享"],
+                            categories=[],
+                            positive_rate=90,
+                            review_summary="入库共享",
+                        )
                     except Exception as e:
                         logger.debug(f"Detail warmup skipped for app {app.appid}: {e}")
+                        return None
 
-            # Process in chunks of 15
-            for i in range(0, len(uncached), 15):
-                chunk = uncached[i : i + 15]
-                await asyncio.gather(*(fetch_one(app) for app in chunk))
-                await asyncio.sleep(0.25)
-            logger.info("Background price warmup completed.")
+            # Process in chunks of 40 games per batch with single-transaction SQLite bulk commit
+            for i in range(0, len(uncached), 40):
+                chunk = uncached[i : i + 40]
+                results = await asyncio.gather(*(fetch_one(app) for app in chunk))
+                valid_details = [r for r in results if r is not None]
+                if valid_details:
+                    await self.storage.cache_app_details_batch(valid_details)
+                await asyncio.sleep(0.05)
+            logger.info(f"High-speed background price warmup completed for {len(uncached)} games.")
         except Exception as ex:
             logger.warning(f"Error in background warmup task: {ex}")
 

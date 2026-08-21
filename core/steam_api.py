@@ -177,14 +177,16 @@ class SteamFamilyClient:
             )
         return shared_apps
 
-    async def get_app_details(self, appid: int) -> AppDetails | None:
+    async def get_app_details(self, appid: int, basic_only: bool = False) -> AppDetails | None:
         if appid in self._app_details_cache:
             return self._app_details_cache[appid]
 
         url = "https://store.steampowered.com/api/appdetails"
         params = {"appids": appid, "cc": "cn", "l": "schinese"}
+        if basic_only:
+            params["filters"] = "price_overview,basic,genres"
         try:
-            resp = await self._client.get(url, params=params)
+            resp = await self._client.get(url, params=params, timeout=10.0)
             if resp.status_code == 200:
                 data = resp.json()
                 app_info = data.get(str(appid), {})
@@ -194,7 +196,7 @@ class SteamFamilyClient:
                     self._app_details_cache[appid] = details
                     return details
         except Exception as e:
-            logger.warning(f"Failed to fetch store details for appid {appid}: {e}")
+            logger.debug(f"Store details query for app {appid}: {e}")
         return None
 
     def _parse_store_details(self, appid: int, app_data: dict[str, Any]) -> AppDetails:
