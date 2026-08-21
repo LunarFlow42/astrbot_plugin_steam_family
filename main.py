@@ -1,7 +1,5 @@
 import asyncio
 import logging
-import os
-import tempfile
 from pathlib import Path
 
 try:
@@ -106,24 +104,31 @@ logger = logging.getLogger(__name__)
 
 
 def _get_db_path() -> str:
-    """获取 AstrBot 官方规范持久化数据库路径，兼容各种部署模式。"""
+    """
+    获取 AstrBot 规范持久化数据库路径 (位于 data/plugin_data/{plugin_name}/steam_family.db)。
+    确保严格存储在 AstrBot 根数据目录 data/ 下，避免更新插件时数据被覆盖。
+    """
     try:
         from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
-        data_dir = get_astrbot_data_path() / "plugin_data" / "astrbot_plugin_steam_family"
-        data_dir.mkdir(parents=True, exist_ok=True)
-        target_db = data_dir / "steam_family.db"
-        legacy_db = Path("data/steam_family.db")
-        if legacy_db.exists() and not target_db.exists():
-            try:
-                import shutil
-
-                shutil.copy2(legacy_db, target_db)
-            except Exception:
-                pass
-        return str(target_db)
+        base_data_path = get_astrbot_data_path()
     except Exception:
-        return "data/steam_family.db"
+        base_data_path = Path("data")
+
+    data_dir = Path(base_data_path) / "plugin_data" / "astrbot_plugin_steam_family"
+    data_dir.mkdir(parents=True, exist_ok=True)
+    target_db = data_dir / "steam_family.db"
+
+    # 自动无缝兼容并迁移旧版位于 data/ 根目录的数据库
+    legacy_db = Path("data/steam_family.db")
+    if legacy_db.exists() and not target_db.exists():
+        try:
+            import shutil
+
+            shutil.copy2(legacy_db, target_db)
+        except Exception:
+            pass
+    return str(target_db)
 
 
 @register(
@@ -325,7 +330,7 @@ class SteamFamilyPlugin(Star):
                     self.config.access_token, self.config.steam_id
                 )
                 if not group_id:
-                    return f"⚠️ 无法获取家庭组 ID。该账号 ({self.config.steam_id}) 可能未加入任何 Steam 家庭组，或 Token 权限不足。"
+                    return f"⚠️ 无法获取家庭组 ID。该账号 ({self.config.steam_id}) 可能未加入任何 Steam 家庭组，或 Token权限不足。"
                 self.config.family_group_id = group_id
                 logger.info(f"Detected family group id: {group_id}")
 
@@ -403,19 +408,8 @@ class SteamFamilyPlugin(Star):
                 for target_id in subscribers:
                     try:
                         if rendered_image and hasattr(self.context, "send_message"):
-                            if isinstance(rendered_image, str):
-                                chain = MessageChain([Comp.Image.fromURL(rendered_image)])
-                            else:
-                                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
-                                    tf.write(rendered_image)
-                                    temp_path = tf.name
-                                chain = MessageChain([Comp.Image.fromFileSystem(temp_path)])
+                            chain = MessageChain([Comp.Image.fromURL(rendered_image)])
                             await self.context.send_message(target_id, chain)
-                            if not isinstance(rendered_image, str):
-                                try:
-                                    os.remove(temp_path)
-                                except Exception:
-                                    pass
                         elif hasattr(self.context, "send_message"):
                             msg = f"✨ 【Steam 家庭库新游戏入库】\n🎮 《{card_data['game_name']}》\n👑 入库义父: {card_data['owner_name']}\n💰 价格: {card_data['final_price']}"
                             chain = MessageChain([Comp.Plain(msg)])
