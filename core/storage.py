@@ -127,27 +127,23 @@ class FamilyStorage:
             data = json.loads(raw_json)
             result = {}
             for item in data:
-                rt_acq = (
-                    item.get("rt_time_acquired")
-                    or item.get("rtTimeAcquired")
-                    or item.get("rt_time_created")
-                    or 0
-                )
                 app = SharedApp(
                     appid=int(item.get("appid", 0)),
                     name=str(item.get("name", "")),
                     owner_steamids=[
                         str(x)
-                        for x in (item.get("owner_steamids") or item.get("ownerSteamids") or [])
+                        for x in (item.get("ownerSteamids") or item.get("owner_steamids") or [])
                     ],
                     exclude_reason=int(
-                        item.get("exclude_reason") or item.get("excludeReason") or 0
+                        item.get("excludeReason") or item.get("exclude_reason") or 0
                     ),
-                    app_type=int(item.get("app_type") or item.get("appType") or 1),
-                    rt_time_acquired=int(rt_acq),
-                    rt_last_played=int(item.get("rt_last_played") or item.get("rtLastPlayed") or 0),
-                    rt_playtime=int(item.get("rt_playtime") or item.get("rtPlaytime") or 0),
-                    img_icon_hash=str(item.get("img_icon_hash") or item.get("imgIconHash") or ""),
+                    app_type=int(item.get("appType") or item.get("app_type") or 1),
+                    rt_time_acquired=int(
+                        item.get("rtTimeAcquired") or item.get("rt_time_acquired") or 0
+                    ),
+                    rt_last_played=int(item.get("rtLastPlayed") or item.get("rt_last_played") or 0),
+                    rt_playtime=int(item.get("rtPlaytime") or item.get("rt_playtime") or 0),
+                    img_icon_hash=str(item.get("imgIconHash") or item.get("img_icon_hash") or ""),
                 )
                 result[app.appid] = app
             return result

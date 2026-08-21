@@ -245,9 +245,9 @@ class SteamFamilyClient:
         for item in apps_data:
             appid = item.get("appid")
             name = item.get("name", "")
-            exclude_reason = item.get("exclude_reason") or item.get("excludeReason") or 0
-            app_type = item.get("app_type") or item.get("appType") or 1
-            raw_owners = item.get("owner_steamids") or item.get("ownerSteamids") or []
+            exclude_reason = int(item.get("excludeReason") or item.get("exclude_reason") or 0)
+            app_type = int(item.get("appType") or item.get("app_type") or 1)
+            raw_owners = item.get("ownerSteamids") or item.get("owner_steamids") or []
             owner_steamids = [str(x) for x in raw_owners]
 
             if not appid:
@@ -269,26 +269,16 @@ class SteamFamilyClient:
                 if any(kw in lower_name for kw in non_game_keywords):
                     continue
 
-            rt_time_raw = (
-                item.get("rt_time_acquired")
-                or item.get("rtTimeAcquired")
-                or item.get("rt_time_created")
-                or item.get("rtTimeCreated")
-                or item.get("rtime_acquired")
-                or item.get("rtimeAcquired")
-                or item.get("time_acquired")
-                or item.get("timeAcquired")
-                or item.get("time")
-                or 0
-            )
+            # Steam WebAPI Protobuf JSON natively uses camelCase (rtTimeAcquired)
+            rt_time_raw = item.get("rtTimeAcquired") or item.get("rt_time_acquired") or 0
             try:
                 rt_time_acquired = int(rt_time_raw)
             except (ValueError, TypeError):
                 rt_time_acquired = 0
 
-            rt_last_played = int(item.get("rt_last_played") or item.get("rtLastPlayed") or 0)
-            rt_playtime = int(item.get("rt_playtime") or item.get("rtPlaytime") or 0)
-            img_icon_hash = str(item.get("img_icon_hash") or item.get("imgIconHash") or "")
+            rt_last_played = int(item.get("rtLastPlayed") or item.get("rt_last_played") or 0)
+            rt_playtime = int(item.get("rtPlaytime") or item.get("rt_playtime") or 0)
+            img_icon_hash = str(item.get("imgIconHash") or item.get("img_icon_hash") or "")
 
             shared_apps.append(
                 SharedApp(
