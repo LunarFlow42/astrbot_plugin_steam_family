@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.10+-3776AB?style=flat&logo=python&logoColor=white" alt="Python Version" />
-  <img src="https://img.shields.io/badge/AstrBot-Plugin-FF6B6B?style=flat" alt="AstrBot Plugin" />
+  <img src="https://img.shields.io/badge/AstrBot-Plugin%20v4-FF6B6B?style=flat" alt="AstrBot Plugin" />
   <img src="https://img.shields.io/badge/Ruff-Formatted-black?style=flat" alt="Ruff Formatted" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat" alt="License" />
 </p>
@@ -27,6 +27,25 @@
 - 🚀 **开黑车队雷达**：一键计算指定多位开黑成员共同拥有的多人合作游戏交集，聚会开黑不撞车。
 - 📊 **Web 全景大盘与远程访问**：内置 Web 看板服务与 `_conf_schema.json`，支持一键切换 `0.0.0.0` 远程/局域网浏览器访问，直观查看全量家庭资产。
 - 🤖 **原生 AI Agent 工具调用（LLM Function Calling）**：支持群友使用自然语言与机器人聊天找游戏（*“帮我找个 50 块以下画风治愈的解谜游戏”*）。
+- 🛡️ **双模鉴权与自动永久保活**：支持直达链接获取 Token，亦可填入 Cookie 由插件在后台自动静默刷新 Token，永久免维护。
+
+---
+
+## 📦 插件安装
+
+### 方式一：AstrBot WebUI 插件市场 / Git 安装（推荐）
+1. 打开 AstrBot Web 控制台，进入 **「插件管理」->「安装插件」**；
+2. 在 Git 仓库地址中输入：
+   ```text
+   https://github.com/LunarFlow42/astrbot_plugin_steam_family
+   ```
+3. 点击安装，AstrBot 会**全自动解析 `requirements.txt` 完成全部依赖安装**，无需手动执行任何命令。
+
+### 方式二：手动克隆安装
+在 AstrBot 根目录下的 `data/plugins/` 目录执行：
+```bash
+git clone https://github.com/LunarFlow42/astrbot_plugin_steam_family.git data/plugins/astrbot_plugin_steam_family
+```
 
 ---
 
@@ -34,7 +53,7 @@
 
 ### 1. 获取 64 位 SteamID（1 秒直达）
 👉 **直达链接**：点击登录 [Steam 账户明细页 (store.steampowered.com/account)](https://store.steampowered.com/account/)  
-页面最顶部直接显示：**`Steam ID: 76561198xxxxxxxx`**，直接复制这 17 位纯数字即可。
+> 页面最上方直接显示：**`Steam ID: 76561198xxxxxxxx`**，复制这 **17 位纯数字** 即可。
 
 ---
 
@@ -52,25 +71,32 @@
   }
 }
 ```
-**直接复制 `"webapi_token"` 冒号后面的那串以 `ey` 开头的长字符串** 即可！无需按 F12，无需输入任何代码。
+> 📌 **操作**：直接复制 `"webapi_token"` 冒号后面的那串以 **`ey`** 开头的长字符串即可！无需开控制台，点开就能直接复制。
 
 ---
 
 ## ⚙️ 配置与绑定
 
-- **方式 A（WebUI 可视化配置 · 推荐）**：
-  在 AstrBot Web 控制台进入「插件管理」->「插件配置」找到 `astrbot_plugin_steam_family`，填入 `access_token` 和 `steam_id`（可选填 `cookie` 开启全自动无感保活），保存即可。
-- **方式 B（聊天指令配置）**：
-  在聊天中发送：
-  ```text
-  /steam_bind <你的Token> <你的SteamID>
-  /steam_sub
-  /steam_check
-  ```
+### 方式 A：WebUI 可视化配置（推荐）
+在 AstrBot Web 控制台进入「插件管理」->「插件配置」找到 `Steam 家庭资产管家`，填写以下核心配置：
+- **`access_token`**：粘贴上述获取到的 `webapi_token` 字符串。
+- **`steam_id`**：填写你的 17 位 Steam 64 位数字 ID。
+- **`cookie`**（可选·永久保活）：若填入 Steam 网页端 `steamLoginSecure` Cookie，插件将在 Token 过期时全自动静默刷新，永久保活免维护！
+- **`dashboard_host`**：默认 `0.0.0.0`（支持远程/局域网访问）或 `127.0.0.1`（仅本机）。
+- **`dashboard_port`**：默认 `6188`。
+- **`proxy`**：若服务器位于中国大陆无法直连 Steam API，可配置代理地址（如 `http://127.0.0.1:7890`）。
+
+### 方式 B：聊天指令快捷配置
+在机器人所在的聊天中发送：
+```text
+/steam_bind <你的Token> <你的SteamID>
+/steam_sub
+/steam_check
+```
 
 ---
 
-## 📖 指令速查表
+## 📖 完整指令速查表
 
 | 指令 | 说明 | 兼容别名 | 使用示例 |
 |---|---|---|---|
