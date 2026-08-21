@@ -255,14 +255,11 @@ class SteamFamilyPlugin(Star):
             except Exception as e:
                 logger.debug(f"Detail warmup skipped for app {app.appid}: {e}")
 
-    async def _render_card_image(self, card_data: dict) -> bytes | str | None:
-        """
-        利用 AstrBot 原生 self.html_render 或内部 Playwright 渲染高质量游戏卡片。
-        """
+    async def _render_card_image(self, card_data: dict) -> str | None:
+        """利用 AstrBot 原生 self.html_render 渲染高质量游戏卡片。"""
         if not self.config.enable_render_card:
             return None
 
-        # 优先调用 AstrBot Star 原生自带的 html_render
         if hasattr(self, "html_render"):
             try:
                 tmpl = self.renderer.get_template_source("game_card.html")
@@ -272,13 +269,11 @@ class SteamFamilyPlugin(Star):
                         card_data,
                         options={"type": "png", "omit_background": False},
                     )
-                    if url:
-                        return url
+                    return url
             except Exception as ex:
-                logger.debug(f"AstrBot Star.html_render fallback to internal renderer: {ex}")
+                logger.debug(f"AstrBot Star.html_render exception: {ex}")
 
-        # 降级使用内部 Playwright 渲染
-        return await self.renderer.render_game_card(card_data)
+        return None
 
     async def _check_and_notify(self) -> str:
         self._refresh_config()
@@ -580,5 +575,4 @@ class SteamFamilyPlugin(Star):
     async def terminate(self):
         if self._polling_task:
             self._polling_task.cancel()
-        await self.renderer.close()
         logger.info("Steam Family Plugin terminated.")

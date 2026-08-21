@@ -45,9 +45,9 @@
     "default": 20
   },
   "enable_render_card": {
-    "description": "启用精美 HTML 游戏卡片图片渲染",
+    "description": "启用精美游戏卡片图片渲染",
     "type": "bool",
-    "hint": "开启后新游戏变动将调用 AstrBot 原生 html_render / Playwright 渲染高质量卡片，关闭则发送文字",
+    "hint": "开启后新游戏变动将调用 AstrBot 原生 html_render 渲染高质量卡片，关闭则发送精简文字",
     "default": true
   },
   "filter_non_games": {
