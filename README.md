@@ -127,8 +127,9 @@ git clone https://github.com/LunarFlow42/astrbot_plugin_steam_family.git data/pl
 
 本项目在开发过程中借鉴了开源社区优秀项目的创意与实现思路，特此致谢：
 - 🌟 **[AstrBot 框架](https://github.com/AstrBotDevs/AstrBot)**：强大的跨平台 LLM 机器人与插件开发框架。
-- 🌟 **[koishi-plugin-steam-family-bot](https://github.com/kt-fun/koishi-steam-family-bot)**（by [ktKongTong / kt-fun](https://github.com/kt-fun)）：启发了 Steam 家庭库监控的设计思路与 WebAPI Token 获取方案。
-- 🌟 **Steam 官方 Web API (`IFamilyGroupsService`)**：提供家庭组基础数据支持。
+- 🌟 **Steam 逆向工程社区（SteamRE / SteamDB 等）**：提供了对 Valve 新版 `IFamilyGroupsService` API 及 Token 提取机制的基础协议逆向支持。
+- 🌟 **开源社区同类项目（如 [koishi-steam-family-bot](https://github.com/kt-fun/koishi-steam-family-bot)）**：提供了群聊家庭库监控的场景实践与设计参考。
+- 🌟 **Steam 官方 Web API (`IFamilyGroupsService`)**：提供家庭组底层数据支持。
 
 ---
 
