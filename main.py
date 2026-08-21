@@ -1,9 +1,51 @@
 import asyncio
 import logging
+import os
+import tempfile
 from typing import Any
-from astrbot.api.star import Star, register, Context
-from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
-from astrbot.api.message_components import Plain, Image
+
+try:
+    from astrbot.api.star import Star, register, Context
+    from astrbot.api.event import filter, AstrMessageEvent, MessageChain
+    import astrbot.api.message_components as Comp
+    from astrbot.api import AstrBotConfig
+except ImportError:
+    class Star:
+        def __init__(self, context):
+            self.context = context
+    class Context:
+        def get_config(self):
+            return {}
+        async def send_message(self, *args, **kwargs):
+            pass
+    def register(*args, **kwargs):
+        return lambda cls: cls
+    class filter:
+        @staticmethod
+        def command(*args, **kwargs):
+            return lambda f: f
+        @staticmethod
+        def llm_tool(*args, **kwargs):
+            return lambda f: f
+    class AstrMessageEvent:
+        unified_msg_origin = "test_umo"
+        def plain_result(self, text):
+            return text
+    class MessageChain:
+        def __init__(self, *args, **kwargs):
+            pass
+    class Comp:
+        class Plain:
+            def __init__(self, text):
+                pass
+        class Image:
+            @staticmethod
+            def fromFileSystem(path):
+                return path
+            @staticmethod
+            def fromBytes(b):
+                return b
+    AstrBotConfig = dict
 
 try:
     from .config import PluginConfig
@@ -31,10 +73,17 @@ logger = logging.getLogger(__name__)
     "0.1.0"
 )
 class SteamFamilyPlugin(Star):
-    def __init__(self, context: Context):
+    def __init__(self, context: Context, config: AstrBotConfig | dict | None = None):
         super().__init__(context)
-        raw_config = context.get_config() if hasattr(context, "get_config") else {}
-        self.config = PluginConfig(**raw_config) if isinstance(raw_config, dict) else PluginConfig()
+        raw_config = config if isinstance(config, (dict, AstrBotConfig)) else {}
+        if not raw_config and hasattr(context, "get_config"):
+            try:
+                raw_config = context.get_config()
+            except Exception:
+                raw_config = {}
+        
+        self.raw_astr_config = config if isinstance(config, AstrBotConfig) else None
+        self.config = PluginConfig(**raw_config) if isinstance(raw_config, dict) and raw_config else PluginConfig()
 
         self.client = SteamFamilyClient(proxy=self.config.proxy, timeout=self.config.request_timeout)
         self.storage = FamilyStorage("data/steam_family.db")
@@ -48,17 +97,20 @@ class SteamFamilyPlugin(Star):
         asyncio.create_task(self._init_and_start_polling())
 
     def _refresh_config(self):
-        """Dynamically reload config from context if updated via WebUI."""
-        if hasattr(self.context, "get_config"):
+        """Dynamically reload config from AstrBotConfig or context."""
+        raw = None
+        if self.raw_astr_config is not None:
+            raw = dict(self.raw_astr_config)
+        elif hasattr(self.context, "get_config"):
             try:
                 raw = self.context.get_config()
-                if isinstance(raw, dict) and raw:
-                    self.config = PluginConfig(**raw)
-                    # Recreate HTTP client if proxy or timeout changed
-                    if self.client.proxy != self.config.proxy or self.client.timeout != self.config.request_timeout:
-                        self.client = SteamFamilyClient(proxy=self.config.proxy, timeout=self.config.request_timeout)
-            except Exception as e:
-                logger.warning(f"Failed to refresh config from context: {e}")
+            except Exception:
+                raw = None
+
+        if isinstance(raw, dict) and raw:
+            self.config = PluginConfig(**raw)
+            if self.client.proxy != self.config.proxy or self.client.timeout != self.config.request_timeout:
+                self.client = SteamFamilyClient(proxy=self.config.proxy, timeout=self.config.request_timeout)
 
     async def _init_and_start_polling(self):
         try:
@@ -197,10 +249,20 @@ class SteamFamilyPlugin(Star):
                 for target_id in subscribers:
                     try:
                         if card_bytes and hasattr(self.context, "send_message"):
-                            await self.context.send_message(target_id, [Image.fromBytes(card_bytes)])
+                            # Save temp image for robust message chain sending
+                            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf:
+                                tf.write(card_bytes)
+                                temp_path = tf.name
+                            chain = MessageChain([Comp.Image.fromFileSystem(temp_path)])
+                            await self.context.send_message(target_id, chain)
+                            try:
+                                os.remove(temp_path)
+                            except Exception:
+                                pass
                         elif hasattr(self.context, "send_message"):
                             msg = f"✨ 【Steam 家庭库新游戏入库】\n🎮 《{card_data['game_name']}》\n👑 入库义父: {card_data['owner_name']}\n💰 价格: {card_data['final_price']}"
-                            await self.context.send_message(target_id, [Plain(msg)])
+                            chain = MessageChain([Comp.Plain(msg)])
+                            await self.context.send_message(target_id, chain)
                     except Exception as ex:
                         logger.error(f"Failed to send push to {target_id}: {ex}")
 
@@ -225,73 +287,65 @@ class SteamFamilyPlugin(Star):
             except Exception as e:
                 logger.error(f"Polling loop encountered error: {e}")
 
-    @filter.command("steam_bind")
+    @filter.command("steam_bind", alias={"steam bind", "steam绑定"})
     async def cmd_bind(self, event: AstrMessageEvent, access_token: str, steam_id: str = ""):
         """绑定 Steam Access Token 和 SteamID。例: /steam_bind eyJhb... 76561198..."""
         self.config.access_token = access_token
         if steam_id:
             self.config.steam_id = steam_id
+        if self.raw_astr_config is not None:
+            self.raw_astr_config["access_token"] = access_token
+            if steam_id:
+                self.raw_astr_config["steam_id"] = steam_id
+            if hasattr(self.raw_astr_config, "save_config"):
+                self.raw_astr_config.save_config()
         yield event.plain_result("✅ Steam 凭据绑定成功！正在立即拉取家庭库并更新大盘数据...")
         asyncio.create_task(self._check_and_notify())
 
-    @filter.command("steam_check")
+    @filter.command("steam_check", alias={"steam check", "steam同步", "家庭库检查"})
     async def cmd_check(self, event: AstrMessageEvent):
         """手动触发一次家庭库变动检查与同步。"""
         yield event.plain_result("⏳ 正在向 Steam 请求家庭库数据，请稍候...")
         result = await self._check_and_notify()
         yield event.plain_result(result)
 
-    @filter.command("steam check")
-    async def cmd_check_alias(self, event: AstrMessageEvent):
-        """手动触发一次家庭库变动检查与同步 (别名)。"""
-        yield event.plain_result("⏳ 正在向 Steam 请求家庭库数据，请稍候...")
-        result = await self._check_and_notify()
-        yield event.plain_result(result)
-
-    @filter.command("steam_sub")
+    @filter.command("steam_sub", alias={"steam sub", "steam订阅"})
     async def cmd_sub(self, event: AstrMessageEvent):
         """订阅当前群/私聊的家庭库新游戏变动推送。"""
         target_id = getattr(event, "unified_msg_origin", str(event))
         await self.storage.subscribe(target_id)
         yield event.plain_result("🔔 已成功订阅当前会话的 Steam 家庭库变动推送通知！")
 
-    @filter.command("steam sub")
-    async def cmd_sub_alias(self, event: AstrMessageEvent):
-        """订阅当前群/私聊的家庭库新游戏变动推送 (别名)。"""
-        target_id = getattr(event, "unified_msg_origin", str(event))
-        await self.storage.subscribe(target_id)
-        yield event.plain_result("🔔 已成功订阅当前会话的 Steam 家庭库变动推送通知！")
-
-    @filter.command("steam_unsub")
+    @filter.command("steam_unsub", alias={"steam unsub", "steam退订"})
     async def cmd_unsub(self, event: AstrMessageEvent):
         """取消订阅当前群/私聊的变动推送。"""
         target_id = getattr(event, "unified_msg_origin", str(event))
         await self.storage.unsubscribe(target_id)
         yield event.plain_result("🔕 已取消当前会话的变动推送订阅。")
 
-    @filter.command("steam rank")
+    @filter.command("steam_rank", alias={"steam rank", "义父榜", "steam排行"})
     async def cmd_rank(self, event: AstrMessageEvent):
         """查看家庭组义父资产贡献榜。"""
         stats_text = await self.agent_tools.get_family_stats()
         yield event.plain_result(stats_text)
 
-    @filter.command("steam roll")
+    @filter.command("steam_roll", alias={"steam roll", "今天玩什么", "steam抽奖"})
     async def cmd_roll(self, event: AstrMessageEvent, tag: str = ""):
-        """赛博轮盘：从家庭库中随机抽选一款游戏。例: /steam roll RPG"""
+        """赛博轮盘：从家庭库中随机抽选一款游戏。例: /steam_roll RPG"""
         roll_text = await self.agent_tools.roll_game(tag=tag)
         yield event.plain_result(roll_text)
 
-    @filter.command("steam coop")
+    @filter.command("steam_coop", alias={"steam coop", "开黑雷达", "steam联机"})
     async def cmd_coop(self, event: AstrMessageEvent, member_ids: str = ""):
         """开黑车队雷达：分析多人共同拥有的联机游戏。"""
         ids = [m.strip() for m in member_ids.split() if m.strip()]
         if len(ids) < 2:
-            yield event.plain_result("请提供至少两位成员的 SteamID，例如：/steam coop 76561198... 76561198...")
+            yield event.plain_result("请提供至少两位成员的 SteamID，例如：/steam_coop 76561198... 76561198...")
             return
         result = await self.agent_tools.find_coop_games(ids)
         yield event.plain_result(result)
 
-    @filter.command("steam dashboard")
+    @filter.command("steam_dashboard", alias={"steam dashboard", "steam大盘", "steam看板"})
     async def cmd_dashboard(self, event: AstrMessageEvent):
         """获取 Steam 家庭资产全景 Web 看板访问地址。"""
         if not self.config.enable_dashboard_server:
@@ -301,7 +355,7 @@ class SteamFamilyPlugin(Star):
         url = f"http://{host_display}:{self.config.dashboard_port}"
         yield event.plain_result(f"📊 Steam 家庭资产全景 Web 看板地址：\n{url}\n(支持远程浏览器访问)")
 
-    @filter.command("steam help")
+    @filter.command("steam_help", alias={"steam help", "steam", "steam帮助"})
     async def cmd_help(self, event: AstrMessageEvent):
         """查看 Steam 家庭管家所有支持的指令列表。"""
         help_msg = (
@@ -309,10 +363,10 @@ class SteamFamilyPlugin(Star):
             "• /steam_check 或 /steam check - 立即同步检查家庭库变动\n"
             "• /steam_sub 或 /steam sub - 开启当前群的新游戏入库卡片推送\n"
             "• /steam_unsub - 取消当前群变动推送\n"
-            "• /steam rank - 查看家庭组义父资产贡献榜\n"
-            "• /steam roll [标签] - 赛博轮盘随机抽取游戏\n"
-            "• /steam coop <SteamID...> - 开黑车队雷达 (计算共有游戏)\n"
-            "• /steam dashboard - 获取实时 Web 全景看板链接\n"
+            "• /steam_rank 或 /steam rank - 查看家庭组义父资产贡献榜\n"
+            "• /steam_roll [标签] - 赛博轮盘随机抽取游戏\n"
+            "• /steam_coop <SteamID...> - 开黑车队雷达 (计算共有游戏)\n"
+            "• /steam_dashboard - 获取实时 Web 全景看板链接\n"
             "• /steam_bind <Token> <SteamID> - 重新绑定鉴权凭据"
         )
         yield event.plain_result(help_msg)
