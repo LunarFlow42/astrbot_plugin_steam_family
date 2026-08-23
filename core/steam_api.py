@@ -237,6 +237,94 @@ class SteamFamilyClient:
             logger.debug(f"Failed to fetch playtime summary: {e}")
         return []
 
+    async def get_player_summaries(
+        self, steamids: list[str], access_token: str = ""
+    ) -> dict[str, dict[str, Any]]:
+        """
+        获取 Steam 用户的个人公开资料（真实用户昵称 persona_name 与头像 avatar_url）。
+        优先通过 IPlayerService/GetPlayerLinkDetails/v1/ 使用 Access Token 批量拉取。
+        """
+        if not steamids:
+            return {}
+
+        results: dict[str, dict[str, Any]] = {}
+        unique_ids = list(set(str(sid) for sid in steamids if str(sid).isdigit()))
+        if not unique_ids:
+            return results
+
+        # 1. Primary: IPlayerService/GetPlayerLinkDetails/v1/ with access_token
+        if access_token:
+            url = "https://api.steampowered.com/IPlayerService/GetPlayerLinkDetails/v1/"
+            params: dict[str, Any] = {"access_token": access_token}
+            for i, sid in enumerate(unique_ids):
+                params[f"steamids[{i}]"] = sid
+            try:
+                resp = await self._client.get(url, params=params, timeout=10.0)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    accounts = data.get("response", {}).get("accounts", [])
+                    for acc in accounts:
+                        pub = acc.get("public_data") or acc.get("publicData") or {}
+                        sid = str(pub.get("steamid", ""))
+                        if not sid:
+                            continue
+                        name = pub.get("persona_name") or pub.get("personaName") or ""
+                        avatar_raw = pub.get("sha_digest_avatar") or pub.get("shaDigestAvatar")
+                        avatar_url = ""
+                        if avatar_raw:
+                            try:
+                                if isinstance(avatar_raw, str):
+                                    try:
+                                        raw_bytes = base64.b64decode(avatar_raw)
+                                        avatar_hex = raw_bytes.hex()
+                                    except Exception:
+                                        avatar_hex = avatar_raw
+                                elif isinstance(avatar_raw, bytes):
+                                    avatar_hex = avatar_raw.hex()
+                                else:
+                                    avatar_hex = ""
+                                if avatar_hex:
+                                    avatar_url = (
+                                        f"https://avatars.steamstatic.com/{avatar_hex}_full.jpg"
+                                    )
+                            except Exception:
+                                pass
+                        results[sid] = {
+                            "steamid": sid,
+                            "persona_name": name,
+                            "avatar_url": avatar_url,
+                        }
+            except Exception as e:
+                logger.debug(f"Failed to query GetPlayerLinkDetails: {e}")
+
+        # 2. Fallback for missing steamids via Steam Community Profile XML
+        missing_ids = [
+            sid for sid in unique_ids if sid not in results or not results[sid].get("persona_name")
+        ]
+        for sid in missing_ids[:6]:
+            try:
+                xml_url = f"https://steamcommunity.com/profiles/{sid}/?xml=1"
+                resp = await self._client.get(xml_url, timeout=6.0)
+                if resp.status_code == 200 and "<steamID>" in resp.text:
+                    import re
+
+                    name_match = re.search(r"<steamID><!\[CDATA\[(.*?)\]\]></steamID>", resp.text)
+                    avatar_match = re.search(
+                        r"<avatarFull><!\[CDATA\[(.*?)\]\]></avatarFull>", resp.text
+                    )
+                    name = name_match.group(1) if name_match else ""
+                    avatar = avatar_match.group(1) if avatar_match else ""
+                    if name:
+                        results[sid] = {
+                            "steamid": sid,
+                            "persona_name": name,
+                            "avatar_url": avatar,
+                        }
+            except Exception as e:
+                logger.debug(f"Fallback community XML query for {sid} failed: {e}")
+
+        return results
+
     def parse_shared_apps(
         self, raw_response: dict[str, Any], filter_non_games: bool = False
     ) -> list[SharedApp]:

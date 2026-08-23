@@ -112,3 +112,28 @@ async def test_get_shared_library_and_playtime():
         assert len(entries) == 1
         assert entries[0]["appid"] == 1086940
         mock_get.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_player_summaries():
+    client = SteamFamilyClient()
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "response": {
+            "accounts": [
+                {
+                    "public_data": {
+                        "steamid": "76561198000000001",
+                        "persona_name": "义父测试员",
+                        "sha_digest_avatar": "MDEyMzQ1Njc4OWFiY2RlZjAxMjM=",
+                    }
+                }
+            ]
+        }
+    }
+    with patch.object(client._client, "get", return_value=mock_resp):
+        summaries = await client.get_player_summaries(["76561198000000001"], "test_access_token")
+        assert "76561198000000001" in summaries
+        assert summaries["76561198000000001"]["persona_name"] == "义父测试员"
+        assert "avatars.steamstatic.com" in summaries["76561198000000001"]["avatar_url"]

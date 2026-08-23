@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -14,9 +14,10 @@ async def test_plugin_web_apis(tmp_path):
         "access_token": "mock_token",
         "steam_id": "76561198000000001",
     }
-    plugin = SteamFamilyPlugin(mock_context)
-    plugin.storage = FamilyStorage(str(tmp_path / "web_api_test.db"))
-    await plugin.storage.init_db()
+    with patch.object(SteamFamilyPlugin, "_init_and_start_polling"):
+        plugin = SteamFamilyPlugin(mock_context)
+        plugin.storage = FamilyStorage(str(tmp_path / "web_api_test.db"))
+        await plugin.storage.init_db()
 
     # Pre-populate apps
     await plugin.storage.save_snapshot(

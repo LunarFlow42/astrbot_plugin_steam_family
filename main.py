@@ -92,7 +92,6 @@ try:
     from .core.diff_engine import FamilyDiffEngine
     from .core.renderer import CardRenderer
     from .core.steam_api import (
-        AppDetails,
         SteamAuthExpiredError,
         SteamFamilyClient,
         SteamRateLimitError,
@@ -105,7 +104,6 @@ except (ImportError, ValueError):
     from core.diff_engine import FamilyDiffEngine
     from core.renderer import CardRenderer
     from core.steam_api import (
-        AppDetails,
         SteamAuthExpiredError,
         SteamFamilyClient,
         SteamRateLimitError,
@@ -422,81 +420,6 @@ class SteamFamilyPlugin(Star):
         except Exception as e:
             logger.error(f"Error during plugin startup: {e}")
 
-    def _trigger_warmup(self, apps: list):
-        """Trigger background price warmup without duplicate tasks."""
-        if self._warmup_task and not self._warmup_task.done():
-            logger.debug(
-                "Background price warmup task is already in progress, skipping duplicate trigger."
-            )
-            return
-        self._warmup_task = asyncio.create_task(self._warmup_app_details(apps))
-
-    async def _warmup_app_details(self, apps: list):
-        """Asynchronously warm up cache for uncached apps with proactive token-bucket rate limiting."""
-        try:
-            cached_apps = await self.storage.get_all_cached_apps()
-            cached_ids = {a.appid for a in cached_apps}
-            uncached = [a for a in apps if a.appid not in cached_ids]
-            if not uncached:
-                return
-
-            if self.client.is_rate_limited:
-                logger.warning(
-                    f"Steam 商店接口当前正处于 429 速率风控冷却中（还剩 {self.client.rate_limit_cooldown_remaining} 秒），自动熔断跳过本次后台估值。"
-                )
-                return
-
-            # Prioritize newest / most recently acquired games first
-            uncached.sort(
-                key=lambda a: (int(getattr(a, "rt_time_acquired", 0) or 0), a.appid),
-                reverse=True,
-            )
-            logger.info(
-                f"Starting proactive rate-limited background price warmup for {len(uncached)} uncached games (paced at 1 req / 1.6s)..."
-            )
-
-            batch_to_save: list[AppDetails] = []
-            for app in uncached:
-                if self.client.is_rate_limited:
-                    logger.warning(
-                        f"Steam 处于 429 风控冷却中（剩余 {self.client.rate_limit_cooldown_remaining} 秒），已安全终止本次后台估值。"
-                    )
-                    break
-                try:
-                    details = await self.client.get_app_details(app.appid, basic_only=True)
-                    if not details:
-                        details = AppDetails(
-                            appid=app.appid,
-                            name=app.name,
-                            chinese_name=app.name,
-                            header_image=f"https://cdn.akamai.steamstatic.com/steam/apps/{app.appid}/header.jpg",
-                            is_free=True,
-                            initial_price=0.0,
-                            final_price=0.0,
-                            discount_percent=0,
-                            genres=["Steam 共享"],
-                            categories=[],
-                            positive_rate=90,
-                            review_summary="入库共享",
-                        )
-                    batch_to_save.append(details)
-                    if len(batch_to_save) >= 5:
-                        await self.storage.cache_app_details_batch(batch_to_save)
-                        batch_to_save.clear()
-                except SteamRateLimitError:
-                    logger.warning(
-                        f"Steam 商店接口触发 429 速率风控，已自动熔断暂停！冷却剩余 {self.client.rate_limit_cooldown_remaining} 秒。"
-                    )
-                    break
-                except Exception as ex:
-                    logger.debug(f"Warmup lookup failed for app {app.appid}: {ex}")
-
-            if batch_to_save:
-                await self.storage.cache_app_details_batch(batch_to_save)
-            logger.info("Proactive background price warmup cycle completed.")
-        except Exception as ex:
-            logger.warning(f"Error in background warmup task: {ex}")
-
     async def _render_card_image(self, card_data: dict) -> str | None:
         """利用 AstrBot 原生 self.html_render 渲染高质量游戏卡片。"""
         if not self.config.enable_render_card:
@@ -602,48 +525,96 @@ class SteamFamilyPlugin(Star):
             if not current_apps:
                 return f"⚠️ 成功连接到 Steam 家庭组 (ID: {group_id})，但获取到的共享游戏列表为空（可能家庭组内无共享游戏或被 Steam 过滤）。"
 
+            # 3. Synchronize member profiles & real nicknames
+            all_owners = list(
+                {
+                    str(sid)
+                    for app in current_apps
+                    for sid in app.owner_steamids
+                    if str(sid).isdigit()
+                }
+            )
+            if all_owners:
+                try:
+                    profiles = await self.client.get_player_summaries(
+                        all_owners, self.config.access_token
+                    )
+                    if profiles:
+                        await self.storage.save_member_profiles(profiles)
+                except Exception as ex:
+                    logger.debug(f"Failed to refresh member profiles: {ex}")
+
+            member_profiles = await self.storage.get_member_profiles()
+
             prev_snapshot = await self.storage.get_latest_snapshot()
             diff = self.diff_engine.compute_diff(current_apps, prev_snapshot)
 
             # Persist latest snapshot
             await self.storage.save_snapshot(current_apps)
 
-            # Warm up price details for uncached apps in background safely
-            self._trigger_warmup(current_apps)
-
             if diff.is_first_run:
                 logger.info(f"Steam Family initial baseline saved with {len(current_apps)} games.")
-                return f"🎉 首次同步成功！已成功建立家庭库基线数据，共同步【{len(current_apps)}】款游戏！\n📊 资产大盘已实时生成，正在后台持续自动估值中，可在 WebUI 查看最新全景大盘。"
+                return f"🎉 首次同步成功！已成功建立家庭库基线数据，共同步【{len(current_apps)}】款游戏！\n📊 实时大盘已生成，可在 WebUI 查看最新全景大盘与义父榜。"
 
             if not diff.has_changes:
                 return (
                     f"✅ 家庭库检查完成：当前库内共有 {len(current_apps)} 款游戏，暂无新游戏变动。"
                 )
 
-            # Process added games and broadcast
+            # Process added games and broadcast (with on-demand single game enrichment)
             subscribers = await self.storage.get_subscribers()
+            broadcast_count = 0
+
             for app in diff.added_apps:
                 details = await self.client.get_app_details(app.appid)
                 if details:
                     await self.storage.cache_app_details(details)
 
+                # Filter out free games if broadcast_free_games is False
+                is_free = bool(
+                    (details and details.is_free)
+                    or (details and details.initial_price == 0.0 and details.final_price == 0.0)
+                )
+                if is_free and not self.config.broadcast_free_games:
+                    logger.info(
+                        f"App 《{app.name}》(AppID: {app.appid}) 为免费游戏，根据设置已自动忽略入库播报。"
+                    )
+                    continue
+
+                # Resolve real nicknames
+                owner_names = []
+                for sid in app.owner_steamids:
+                    p = member_profiles.get(str(sid))
+                    if p and p.get("persona_name"):
+                        owner_names.append(p["persona_name"])
+                    else:
+                        owner_names.append(
+                            f"成员_{str(sid)[-4:]}" if len(str(sid)) >= 4 else str(sid)
+                        )
+                owners_display = "、".join(owner_names) if owner_names else "家庭成员"
+
                 # Render card
                 card_data = {
                     "appid": app.appid,
-                    "game_name": details.chinese_name if details else app.name,
+                    "game_name": (
+                        details.chinese_name if details and details.chinese_name else app.name
+                    )
+                    or app.name,
                     "original_name": app.name,
                     "header_image": details.header_image
                     if details
                     else f"https://cdn.akamai.steamstatic.com/steam/apps/{app.appid}/header.jpg",
-                    "owner_name": ", ".join(app.owner_steamids)
-                    if app.owner_steamids
-                    else "家庭成员",
-                    "initial_price": f"¥ {details.initial_price:.2f}" if details else "¥ 0.00",
-                    "final_price": f"¥ {details.final_price:.2f}" if details else "免费/已入库",
+                    "owner_name": owners_display,
+                    "initial_price": f"¥ {details.initial_price:.2f}"
+                    if details and details.initial_price > 0
+                    else "¥ 0.00",
+                    "final_price": f"¥ {details.final_price:.2f}"
+                    if details and details.final_price > 0
+                    else "免费/已入库",
                     "discount_percent": details.discount_percent if details else 0,
-                    "review_summary": details.review_summary if details else "暂无评测",
-                    "positive_rate": details.positive_rate if details else 0,
-                    "genres": details.genres if details else ["Steam 共享"],
+                    "review_summary": details.review_summary if details else "好评",
+                    "positive_rate": details.positive_rate if details else 95,
+                    "genres": details.genres if details and details.genres else ["Steam 共享"],
                 }
 
                 rendered_image = await self._render_card_image(card_data)
@@ -655,13 +626,24 @@ class SteamFamilyPlugin(Star):
                             chain = MessageChain([Comp.Image.fromURL(rendered_image)])
                             await self.context.send_message(target_id, chain)
                         elif hasattr(self.context, "send_message"):
-                            msg = f"✨ 【Steam 家庭库新游戏入库】\n🎮 《{card_data['game_name']}》\n👑 入库义父: {card_data['owner_name']}\n💰 价格: {card_data['final_price']}"
+                            msg = (
+                                f"✨ 【Steam 家庭库新游戏入库】\n"
+                                f"🎮 《{card_data['game_name']}》\n"
+                                f"👑 入库义父: {card_data['owner_name']}\n"
+                                f"💰 价格: {card_data['final_price']}\n"
+                                f"🔗 商店: https://store.steampowered.com/app/{app.appid}"
+                            )
                             chain = MessageChain([Comp.Plain(msg)])
                             await self.context.send_message(target_id, chain)
                     except Exception as ex:
                         logger.error(f"Failed to send push to {target_id}: {ex}")
 
-            return f"家庭库变动检查完成：发现 {len(diff.added_apps)} 款新入库游戏，{len(diff.removed_apps)} 款移出。"
+                broadcast_count += 1
+
+            if broadcast_count == 0 and len(diff.added_apps) > 0:
+                return f"家庭库变动检查完成：新增 {len(diff.added_apps)} 款免费游戏（已根据设置静默忽略播报）。"
+
+            return f"家庭库变动检查完成：发现 {len(diff.added_apps)} 款新入库游戏（已播报 {broadcast_count} 款），{len(diff.removed_apps)} 款移出。"
         except SteamAuthExpiredError:
             return "⚠️ Steam Access Token 已失效，请重新获取或填入 Cookie 开启全自动永久保活！"
         except SteamRateLimitError:

@@ -621,13 +621,7 @@
       }
 
       document.getElementById("valTotalGames").innerHTML = `${totalGames} <span style="font-size: 14px; font-weight: normal; color: var(--text-dim);">款</span>`;
-      if (data.is_rate_limited) {
-        document.getElementById("valValuationStatus").innerHTML = `🛑 <b style="color:var(--accent-amber);">Steam 触发 429 风控</b> (已自动熔断暂停，保护 IP，冷却剩 ${data.rate_limit_cooldown_remaining || 60}s)`;
-      } else if (cachedCount < totalGames && totalGames > 0) {
-        document.getElementById("valValuationStatus").innerHTML = `⏳ 已估值 <b style="color:var(--steam-blue);">${cachedCount}</b>/${totalGames} 款 (后台温和估值中...)`;
-      } else {
-        document.getElementById("valValuationStatus").innerText = `✅ 全库 ${totalGames} 款游戏已完成 100% 估值`;
-      }
+      document.getElementById("valValuationStatus").innerHTML = `⚡ <b style="color:var(--steam-blue);">实时库存变动极速监控中</b> (新入库游戏将自动单次查价并推卡片)`;
 
       document.getElementById("valTotalInitial").innerText = `¥ ${data.total_initial_value || 0}`;
       document.getElementById("valTotalCurrent").innerText = `¥ ${data.total_current_value || 0}`;
@@ -640,16 +634,27 @@
           const rankPillClass = i === 0 ? 'rank-1' : (i === 1 ? 'rank-2' : (i === 2 ? 'rank-3' : 'rank-other'));
           const rankIcon = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : `#${i + 1}`));
           const memberColor = MEMBER_COLORS[i % MEMBER_COLORS.length];
+          const avatarHtml = r.avatar_url 
+            ? `<img src="${r.avatar_url}" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border-color); flex-shrink: 0;" alt="avatar">` 
+            : `<div style="width: 28px; height: 28px; border-radius: 50%; background: ${memberColor}; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; color: #fff; flex-shrink: 0;">${(r.persona_name || 'U')[0]}</div>`;
           return `
             <tr>
               <td><span class="rank-pill ${rankPillClass}">${rankIcon}</span></td>
-              <td><code style="color: ${memberColor}; font-weight: 700;">${r.steamid}</code></td>
+              <td>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  ${avatarHtml}
+                  <div>
+                    <div style="font-weight: 700; color: ${memberColor}; font-size: 13px;">${r.persona_name || r.steamid}</div>
+                    <div style="font-size: 10px; color: var(--text-dim);">${r.steamid}</div>
+                  </div>
+                </div>
+              </td>
               <td><b>${r.game_count}</b> 款</td>
               <td style="color: var(--steam-green); font-weight: 700;">¥ ${r.total_initial_price}</td>
               <td>¥ ${r.total_current_price}</td>
               <td>
                 <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
-                  <span>贡献率</span>
+                  <span>贡献占比</span>
                   <span style="font-weight: 700; color: ${memberColor};">${r.percentage}%</span>
                 </div>
                 <div class="progress-bar-bg">
@@ -734,7 +739,7 @@
       const memberSelect = document.getElementById("libMemberFilter");
       if (data.rankings) {
         memberSelect.innerHTML = `<option value="">👤 全部成员共享 (${data.total_games} 款)</option>` +
-          data.rankings.map(r => `<option value="${r.steamid}">👤 义父 ${r.steamid} (${r.game_count}款)</option>`).join("");
+          data.rankings.map(r => `<option value="${r.steamid}">👤 义父 ${r.persona_name || r.steamid} (${r.game_count}款)</option>`).join("");
       }
 
       // Genre Filter
@@ -838,7 +843,7 @@
       container.innerHTML = data.rankings.map((r, i) => `
         <div class="member-select-chip" id="chip-${r.steamid}" onclick="toggleCoopMember('${r.steamid}')">
           <input type="checkbox" id="chk-${r.steamid}">
-          <span>👤 ${r.steamid} (${r.game_count} 款)</span>
+          <span>👤 ${r.persona_name || r.steamid} (${r.game_count} 款)</span>
         </div>
       `).join("");
     }

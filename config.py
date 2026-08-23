@@ -25,6 +25,10 @@ class PluginConfig(BaseModel):
         default=True,
         description="是否自动过滤非游戏应用（如工具、专用服务端、原声带）",
     )
+    broadcast_free_games: bool = Field(
+        default=False,
+        description="是否播报免费入库的游戏（默认关闭，仅在有人购买付费游戏时推送播报）",
+    )
     subscribers: list[str] = Field(
         default_factory=list, description="订阅变动推送的目标会话 UMO 列表"
     )

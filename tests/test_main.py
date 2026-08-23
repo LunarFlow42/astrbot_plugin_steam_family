@@ -51,6 +51,9 @@ if "astrbot.api.message_components" not in sys.modules:
     mock_comp_module.Image = MagicMock()
     sys.modules["astrbot.api.message_components"] = mock_comp_module
 
+from unittest.mock import AsyncMock, patch
+
+from core.steam_api import AppDetails, SharedApp
 from main import SteamFamilyPlugin
 
 
@@ -62,37 +65,81 @@ async def test_plugin_init_and_bind():
         "steam_id": "76561198000000001",
     }
 
-    plugin = SteamFamilyPlugin(mock_context)
-    assert plugin.config.access_token == "init_token"
-    assert plugin.config.steam_id == "76561198000000001"
+    with patch.object(SteamFamilyPlugin, "_init_and_start_polling"):
+        plugin = SteamFamilyPlugin(mock_context)
+        assert plugin.config.access_token == "init_token"
+        assert plugin.config.steam_id == "76561198000000001"
 
-    # Test bind command
-    mock_event = MagicMock()
-    mock_event.plain_result = lambda text: text
-    results = [r async for r in plugin.cmd_bind(mock_event, "new_token", "76561198000000002")]
-    assert "绑定成功" in results[0]
-    assert plugin.config.access_token == "new_token"
-    assert plugin.config.steam_id == "76561198000000002"
+        # Test bind command
+        mock_event = MagicMock()
+        mock_event.plain_result = lambda text: text
+        results = [r async for r in plugin.cmd_bind(mock_event, "new_token", "76561198000000002")]
+        assert "绑定成功" in results[0]
+        assert plugin.config.access_token == "new_token"
+        assert plugin.config.steam_id == "76561198000000002"
 
 
 @pytest.mark.asyncio
-async def test_plugin_sub_unsub():
+async def test_plugin_sub_unsub(tmp_path):
     mock_context = MagicMock()
     mock_context.get_config.return_value = {}
-    plugin = SteamFamilyPlugin(mock_context)
+    with patch.object(SteamFamilyPlugin, "_init_and_start_polling"):
+        plugin = SteamFamilyPlugin(mock_context)
+        plugin.storage.db_path = str(tmp_path / "test_sub.db")
+        await plugin.storage.init_db()
 
-    mock_event = MagicMock()
-    mock_event.unified_msg_origin = "session_group_999"
-    mock_event.plain_result = lambda text: text
+        mock_event = MagicMock()
+        mock_event.unified_msg_origin = "session_group_999"
+        mock_event.plain_result = lambda text: text
 
-    results = [r async for r in plugin.cmd_sub(mock_event)]
-    assert "成功订阅" in results[0]
+        results = [r async for r in plugin.cmd_sub(mock_event)]
+        assert "成功订阅" in results[0]
 
-    subs = await plugin.storage.get_subscribers()
-    assert "session_group_999" in subs
+        subs = await plugin.storage.get_subscribers()
+        assert "session_group_999" in subs
 
-    results2 = [r async for r in plugin.cmd_unsub(mock_event)]
-    assert "已取消" in results2[0]
+        results2 = [r async for r in plugin.cmd_unsub(mock_event)]
+        assert "已取消" in results2[0]
 
-    subs2 = await plugin.storage.get_subscribers()
-    assert "session_group_999" not in subs2
+        subs2 = await plugin.storage.get_subscribers()
+        assert "session_group_999" not in subs2
+
+
+@pytest.mark.asyncio
+async def test_free_games_skipped_from_broadcast(tmp_path):
+    mock_context = MagicMock()
+    mock_context.get_config.return_value = {
+        "access_token": "token",
+        "steam_id": "76561198000000001",
+        "broadcast_free_games": False,
+    }
+    with patch.object(SteamFamilyPlugin, "_init_and_start_polling"):
+        plugin = SteamFamilyPlugin(mock_context)
+        plugin.storage.db_path = str(tmp_path / "test_free.db")
+        await plugin.storage.init_db()
+        await plugin.storage.subscribe("group_123")
+
+        # Mock initial baseline
+        initial_apps = [SharedApp(appid=100, name="Game A", owner_steamids=["76561198000000001"])]
+        await plugin.storage.save_snapshot(initial_apps)
+
+        # Mock second check with 1 free app added
+        new_apps = [
+            SharedApp(appid=100, name="Game A", owner_steamids=["76561198000000001"]),
+            SharedApp(appid=200, name="Free Game B", owner_steamids=["76561198000000001"]),
+        ]
+        plugin.client.get_family_group_id = AsyncMock(return_value="group_id_1")
+        plugin.client.get_shared_library = AsyncMock(return_value=new_apps)
+        plugin.client.get_player_summaries = AsyncMock(return_value={})
+        plugin.client.get_app_details = AsyncMock(
+            return_value=AppDetails(
+                appid=200,
+                name="Free Game B",
+                is_free=True,
+                initial_price=0.0,
+                final_price=0.0,
+            )
+        )
+
+        msg = await plugin._check_and_notify()
+        assert "免费游戏" in msg or "静默忽略" in msg

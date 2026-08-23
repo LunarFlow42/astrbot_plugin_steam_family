@@ -69,6 +69,14 @@ class FamilyStorage:
                     PRIMARY KEY (appid, owner_steamid)
                 );
             """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS member_profiles (
+                    steamid TEXT PRIMARY KEY,
+                    persona_name TEXT NOT NULL,
+                    avatar_url TEXT DEFAULT '',
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
             await db.commit()
 
     async def subscribe(self, target_id: str):
@@ -267,8 +275,52 @@ class FamilyStorage:
                 for row in rows
             ]
 
+    async def save_member_profiles(self, profiles: dict[str, dict[str, Any]]):
+        """保存或更新家庭成员资料（真实昵称与头像）。"""
+        if not profiles:
+            return
+        async with self._get_conn() as db:
+            rows = [
+                (
+                    str(sid),
+                    info.get("persona_name") or (f"成员_{sid[-4:]}" if len(sid) >= 4 else sid),
+                    info.get("avatar_url") or "",
+                )
+                for sid, info in profiles.items()
+                if sid
+            ]
+            await db.executemany(
+                """
+                INSERT INTO member_profiles (steamid, persona_name, avatar_url, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(steamid) DO UPDATE SET
+                    persona_name = excluded.persona_name,
+                    avatar_url = excluded.avatar_url,
+                    updated_at = CURRENT_TIMESTAMP
+            """,
+                rows,
+            )
+            await db.commit()
+
+    async def get_member_profiles(self) -> dict[str, dict[str, Any]]:
+        """获取所有已缓存的家庭成员资料字典（Key 为 SteamID）。"""
+        async with (
+            self._get_conn() as db,
+            db.execute("SELECT steamid, persona_name, avatar_url FROM member_profiles") as cursor,
+        ):
+            rows = await cursor.fetchall()
+            return {
+                r[0]: {
+                    "steamid": r[0],
+                    "persona_name": r[1],
+                    "avatar_url": r[2],
+                }
+                for r in rows
+            }
+
     async def get_family_rankings(self) -> list[dict[str, Any]]:
-        """计算家庭成员贡献榜数据。"""
+        """计算家庭成员贡献榜数据（主要按贡献游戏数量降序排列，并挂载真实昵称与头像）。"""
+        profiles = await self.get_member_profiles()
         async with self._get_conn() as db:
             sql = """
                 SELECT
@@ -279,19 +331,26 @@ class FamilyStorage:
                 FROM app_ownership o
                 LEFT JOIN apps_cache c ON o.appid = c.appid
                 GROUP BY o.owner_steamid
-                ORDER BY total_initial DESC, game_count DESC
+                ORDER BY game_count DESC, total_initial DESC
             """
             async with db.execute(sql) as cursor:
                 rows = await cursor.fetchall()
-                return [
-                    {
-                        "steamid": r[0],
-                        "game_count": r[1],
-                        "total_initial_price": round(r[2], 2),
-                        "total_current_price": round(r[3], 2),
-                    }
-                    for r in rows
-                ]
+                rankings = []
+                for r in rows:
+                    sid = str(r[0])
+                    p_info = profiles.get(sid, {})
+                    fallback_name = f"成员_{sid[-4:]}" if len(sid) >= 4 else sid
+                    rankings.append(
+                        {
+                            "steamid": sid,
+                            "persona_name": p_info.get("persona_name") or fallback_name,
+                            "avatar_url": p_info.get("avatar_url") or "",
+                            "game_count": r[1],
+                            "total_initial_price": round(r[2], 2),
+                            "total_current_price": round(r[3], 2),
+                        }
+                    )
+                return rankings
 
     async def get_coop_games(self, member_steamids: list[str]) -> list[dict[str, Any]]:
         """计算指定多位成员共同拥有的联机游戏。"""
@@ -332,9 +391,11 @@ class FamilyStorage:
         rankings = await self.get_family_rankings()
         cached_apps = await self.get_all_cached_apps()
         cached_map = {a.appid: a for a in cached_apps}
+        profiles = await self.get_member_profiles()
 
         total_initial = sum(r["total_initial_price"] for r in rankings)
         total_final = sum(r["total_current_price"] for r in rankings)
+        total_game_count = sum(r["game_count"] for r in rankings)
 
         all_snapshot_apps = []
         genre_counter: dict[str, int] = {}
@@ -372,6 +433,18 @@ class FamilyStorage:
                 else:
                     price_counter["over300"] += 1
 
+                # Map owner steamids to real nicknames
+                owner_names = []
+                for sid in app.owner_steamids:
+                    p = profiles.get(str(sid))
+                    if p and p.get("persona_name"):
+                        owner_names.append(p["persona_name"])
+                    else:
+                        owner_names.append(
+                            f"成员_{str(sid)[-4:]}" if len(str(sid)) >= 4 else str(sid)
+                        )
+                owners_display = ", ".join(owner_names) if owner_names else "家庭成员"
+
                 all_snapshot_apps.append(
                     {
                         "appid": app.appid,
@@ -383,9 +456,7 @@ class FamilyStorage:
                         "header_image": detail.header_image
                         if detail
                         else f"https://cdn.akamai.steamstatic.com/steam/apps/{app.appid}/header.jpg",
-                        "owners": ", ".join(app.owner_steamids)
-                        if app.owner_steamids
-                        else "家庭成员",
+                        "owners": owners_display,
                         "owner_steamids": app.owner_steamids,
                         "initial_price": init_p,
                         "final_price": final_p,
@@ -402,11 +473,11 @@ class FamilyStorage:
                     }
                 )
 
-        # Calculate rankings contribution percentage
+        # Calculate rankings contribution percentage (by contributed game count)
         for r in rankings:
             r["percentage"] = (
-                round((r["total_initial_price"] / total_initial * 100), 1)
-                if total_initial > 0
+                round((r["game_count"] / total_game_count * 100), 1)
+                if total_game_count > 0
                 else round(100.0 / max(1, len(rankings)), 1)
             )
 
@@ -421,6 +492,7 @@ class FamilyStorage:
             "total_current_value": round(total_final, 2),
             "member_count": len(rankings),
             "rankings": rankings,
+            "member_profiles": profiles,
             "recent_games": recent_games,
             "all_snapshot_apps": all_snapshot_apps,
             "top_genres": [{"genre": g[0], "count": g[1]} for g in top_genres],
