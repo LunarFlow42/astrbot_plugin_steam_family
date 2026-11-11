@@ -414,7 +414,7 @@ class SteamFamilyClient:
             if not appid:
                 continue
 
-            # Filtering heuristics
+            # Filtering heuristics: 当 filter_non_games 为 True 时，严格对齐 Steam 客户端 Included Games
             if filter_non_games:
                 if exclude_reason != 0:
                     continue
@@ -422,7 +422,6 @@ class SteamFamilyClient:
                 non_game_keywords = [
                     "dedicated server",
                     "soundtrack",
-                    "test server",
                     "sdk",
                     "wallpaper",
                     "benchmark",

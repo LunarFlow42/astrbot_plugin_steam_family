@@ -1918,27 +1918,13 @@ class SteamFamilyPlugin(Star):
                     all_game_names.add(a.name)
             all_names_catalog = "、".join(sorted(all_game_names))
 
-            # 2. 语义分词与打分：针对需求展开同义词（例如 割草->无双/射击/动作/hack/slash，联机->合作/多人/coop）
-            synonyms = {
-                "割草": ["无双", "hack", "slash", "射击", "清怪", "动作", "horde", "shooter", "僵尸", "丧尸"],
-                "联机": ["合作", "多人", "coop", "multiplayer", "开黑"],
-                "开黑": ["合作", "多人", "coop", "multiplayer", "联机"],
-                "肉鸽": ["rogue", "roguelike", "roguelite"],
-                "解谜": ["puzzle", "解密"],
-            }
-            # 扩展搜索词
+            # 2. 依托基模强大认知，提取直观匹配词，并补充高分代表游戏
             raw_tokens = [t.lower() for t in query.replace("，", " ").replace("。", " ").split() if len(t) > 1]
-            expanded_terms = set(raw_tokens)
-            for token in raw_tokens:
-                for key, syns in synonyms.items():
-                    if key in token:
-                        expanded_terms.update(syns)
-
             matched_apps = []
             other_apps = []
             for a in all_cached:
                 text_to_search = f"{a.chinese_name or ''} {a.name} {' '.join(a.genres)} {' '.join(a.categories)} {a.review_summary}".lower()
-                score = sum(1 for term in expanded_terms if term in text_to_search)
+                score = sum(1 for term in raw_tokens if term in text_to_search)
                 if score > 0:
                     matched_apps.append((score, a))
                 else:
