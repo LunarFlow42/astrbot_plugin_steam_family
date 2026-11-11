@@ -1906,40 +1906,65 @@ class SteamFamilyPlugin(Star):
         umo = getattr(event, "unified_msg_origin", None)
         yield event.plain_result("🤔 Steam 家庭管家正在调取库内数据并思考中，请稍候...")
         try:
-            # 智能相关性检索与上下文注入：不再死板切片前 60 款游戏
-            # 1. 优先提取与用户需求关键词/类型最匹配的游戏候选
             all_cached = await self.storage.get_all_cached_apps()
+
+            # 1. 生成全库游戏名清单（全库 1000+ 款游戏名一次性全量喂给大模型）
+            # 这彻底杜绝大模型“误以为某游戏不在家庭库中”的幻觉！
+            all_game_names = set()
+            for a in all_cached:
+                if a.chinese_name:
+                    all_game_names.add(a.chinese_name)
+                if a.name:
+                    all_game_names.add(a.name)
+            all_names_catalog = "、".join(sorted(all_game_names))
+
+            # 2. 语义分词与打分：针对需求展开同义词（例如 割草->无双/射击/动作/hack/slash，联机->合作/多人/coop）
+            synonyms = {
+                "割草": ["无双", "hack", "slash", "射击", "清怪", "动作", "horde", "shooter", "僵尸", "丧尸"],
+                "联机": ["合作", "多人", "coop", "multiplayer", "开黑"],
+                "开黑": ["合作", "多人", "coop", "multiplayer", "联机"],
+                "肉鸽": ["rogue", "roguelike", "roguelite"],
+                "解谜": ["puzzle", "解密"],
+            }
+            # 扩展搜索词
+            raw_tokens = [t.lower() for t in query.replace("，", " ").replace("。", " ").split() if len(t) > 1]
+            expanded_terms = set(raw_tokens)
+            for token in raw_tokens:
+                for key, syns in synonyms.items():
+                    if key in token:
+                        expanded_terms.update(syns)
+
             matched_apps = []
             other_apps = []
-            
-            # 分词匹配度打分
-            query_terms = [t.lower() for t in query.replace("，", " ").replace("。", " ").split() if len(t) > 1]
             for a in all_cached:
-                text_to_search = f"{a.chinese_name or ''} {a.name} {' '.join(a.genres)} {a.review_summary}".lower()
-                score = sum(1 for term in query_terms if term in text_to_search)
+                text_to_search = f"{a.chinese_name or ''} {a.name} {' '.join(a.genres)} {' '.join(a.categories)} {a.review_summary}".lower()
+                score = sum(1 for term in expanded_terms if term in text_to_search)
                 if score > 0:
                     matched_apps.append((score, a))
                 else:
                     other_apps.append(a)
 
             matched_apps.sort(key=lambda x: (x[0], x[1].positive_rate), reverse=True)
-            top_candidates = [x[1] for x in matched_apps[:45]]
-            # 补齐部分高分/热门游戏作为背景库参考（最多补充到 60 款）
+            top_candidates = [x[1] for x in matched_apps[:40]]
             other_apps.sort(key=lambda x: x.positive_rate, reverse=True)
-            candidates = top_candidates + other_apps[: max(0, 60 - len(top_candidates))]
+            candidates = top_candidates + other_apps[: max(0, 50 - len(top_candidates))]
 
-            app_summaries = [
+            detailed_summaries = [
                 f"• 《{a.chinese_name or a.name}》(原名:{a.name}, 现价:¥{a.final_price:.1f}, 好评率:{a.positive_rate}%, 评价:{a.review_summary or '暂无'}, 标签:{','.join(a.genres[:4])})"
                 for a in candidates
             ]
-            library_context = "\n".join(app_summaries) if app_summaries else "暂无游戏缓存数据"
+            detailed_context = "\n".join(detailed_summaries) if detailed_summaries else "暂无游戏缓存数据"
+
             system_prompt = (
                 "你是一个幽默风趣、见多识广的 Steam 资深游戏专家与家庭库管家。\n"
-                "【严格原则】：\n"
-                "1. 下方提供的【家庭库已有游戏清单】是当前家庭库真实拥有的游戏。如果清单中包含符合用户需求的游戏，必须明确指出它们**已经在家庭库里**，并向用户重点推荐！\n"
-                "2. 绝对不能把家庭库清单里已经拥有的游戏误说成'库外游戏'或'还没入库'。\n"
-                "3. 只有当用户需求在家庭库中确实找不到合适的游戏时，才可以推荐库外游戏，并温馨提醒大家入库。\n\n"
-                f"【家庭库中与本次需求相关的代表性游戏清单】：\n{library_context}"
+                "【极高优先级原则·必须严格执行】：\n"
+                "1. 下方的【家庭库完整拥有游戏全名单】和【重点游戏详情】中包含的所有游戏，都是当前家庭库**已经购买并拥有的真实游戏**！\n"
+                "2. 只要一个游戏（无论中文名或英文名）出现在【家庭库完整拥有游戏全名单】或【重点游戏详情】中（例如《Warhammer: Vermintide 2》《HELLDIVERS™ 2》等），它就**绝对是家庭库已有游戏**！严禁将其归为'库外'或'未入库'！\n"
+                "3. 推荐时请大力夸赞家庭库里的神作储备，优先推荐库内已有的神作！\n\n"
+                f"【家庭库完整拥有游戏全名单（总计 {len(all_game_names)} 款，以下全部已拥有）】：\n"
+                f"{all_names_catalog}\n\n"
+                f"【根据需求重点筛选的游戏详情参考】：\n"
+                f"{detailed_context}"
             )
 
             if (
