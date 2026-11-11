@@ -927,43 +927,64 @@ class SteamFamilyPlugin(Star):
                     f"✅ 家庭库检查完成：当前库内共有 {len(current_apps)} 款游戏，暂无新游戏变动。"
                 )
 
-            # ------------------------------------------------------------------
             # 变动事件统一入队（快照已落库，播报交给 pending_notifications 可靠队列）：
-            # 推送失败 / 429 / 进程重启都不会丢通知， 由 _drain_pending_notifications 补播。
-            # ------------------------------------------------------------------
+            # 引入防刷屏聚合安全阀：
+            # 1. 新增游戏（added）：超过 5 款时静默入队但不单独狂发卡片，而是聚合成一条汇总消息；
+            # 2. 移出游戏（removed）：超过 10 款（或占总数 15%）时跳过单条播报；
+            # 3. 归属变化（owner_changes）与状态变化（status_changes）：超过 5 条时聚合汇总，绝不单条疯狂轰炸。
+            added_total = len(diff.added_apps)
+            large_added = added_total > 5
             added_enqueued = 0
-            for app in diff.added_apps:
-                await self.storage.enqueue_pending(
-                    "added",
-                    {
-                        "appid": app.appid,
-                        "name": app.name,
-                        "owner_steamids": list(app.owner_steamids),
-                    },
-                    dedupe_key=f"added:{app.appid}",
+
+            if large_added:
+                # 超过 5 款新增，不再逐条发卡片轰炸群聊，聚合为一条汇总事件
+                names_preview = "、".join(f"《{a.name}》" for a in diff.added_apps[:5])
+                summary_text = (
+                    f"📦 【Steam 家庭库批量入库】检测到大量游戏新入库（共 {added_total} 款）！\n"
+                    f"包含 {names_preview} 等，已自动同步更新至大盘，不再逐条发卡片刷屏。"
                 )
-                added_enqueued += 1
+                await self.storage.enqueue_pending(
+                    "summary_notice",
+                    {"text": summary_text},
+                    dedupe_key=f"summary_added:{time.time():.0f}",
+                )
+                added_enqueued = 1
+                logger.info(f"新增 {added_total} 款游戏，已触发防刷屏聚合汇总播报。")
+            else:
+                for app in diff.added_apps:
+                    await self.storage.enqueue_pending(
+                        "added",
+                        {
+                            "appid": app.appid,
+                            "name": app.name,
+                            "owner_steamids": list(app.owner_steamids),
+                        },
+                        dedupe_key=f"added:{app.appid}",
+                    )
+                    added_enqueued += 1
 
             # 大规模移出安全阀：removed 数量异常多时（例如过滤开关切换 / 家庭组大变动），
-            # 不播报 removed，避免向所有订阅群疯狂刷屏；added / owner / status 不受影响。
+            # 超过 10 款时聚合成一条汇总播报，避免疯狂刷屏。
             removed_total = len(diff.removed_apps)
-            prev_count = len(prev_snapshot) if prev_snapshot else 0
-            removal_threshold = max(25, int(prev_count * 0.15))
-            large_removal = removed_total > removal_threshold
+            large_removal = removed_total > 10
             removed_enqueued = 0
             if large_removal:
+                summary_text = (
+                    f"🛡️ 【Steam 家庭库批量变动】检测到 {removed_total} 款游戏移出/状态变更，"
+                    "已自动更新基线，跳过逐条播报。"
+                )
+                await self.storage.enqueue_pending(
+                    "summary_notice",
+                    {"text": summary_text},
+                    dedupe_key=f"summary_removed:{time.time():.0f}",
+                )
+                removed_enqueued = 1
                 logger.warning(
-                    f"检测到大规模移出 {removed_total} 款（阈值 {removal_threshold}），"
-                    "判定为异常事件，跳过移出播报，仅更新基线。"
+                    f"检测到大规模移出 {removed_total} 款，已聚合为汇总消息播报。"
                 )
             else:
                 for app in diff.removed_apps:
-                    # payload 附带上一快照中的归属人（removed app 即来自 prev_snapshot）
                     prev_app = prev_snapshot.get(app.appid) if prev_snapshot else None
-                    # 上一快照本就是"排除态"（exclude_reason≠0，如购买冲突/家庭组许可变化）
-                    # 的应用从未真正在共享库内对用户可见，其从 Steam 响应中消失属常态波动，
-                    # 不作为"移出"事件打扰订阅者（否则默认配置下永远收不到该事件，
-                    # 而关闭过滤时又会收到一波伪移出）。
                     if prev_app and int(prev_app.exclude_reason or 0) != 0:
                         logger.debug(
                             f"App {app.appid}《{app.name}》移出前已是排除态"
@@ -984,33 +1005,57 @@ class SteamFamilyPlugin(Star):
                     )
                     removed_enqueued += 1
 
-            for oc in diff.owner_changes:
+            owner_changes_total = len(diff.owner_changes)
+            if owner_changes_total > 5:
+                # 归属变动超过 5 条（常见于修复 bug 或初次识别所有权时），聚合为一条汇总，绝不连续单条刷屏
+                summary_text = f"🔁 【Steam 家庭库归属变动】检测到 {owner_changes_total} 款游戏的归属人更新，已自动刷新义父榜资产！"
                 await self.storage.enqueue_pending(
-                    "owner_change",
-                    {
-                        "appid": oc.app.appid,
-                        "name": oc.app.name,
-                        "added_owners": list(oc.added_owners),
-                        "removed_owners": list(oc.removed_owners),
-                    },
-                    dedupe_key=f"owner:{oc.app.appid}",
+                    "summary_notice",
+                    {"text": summary_text},
+                    dedupe_key=f"summary_owner:{time.time():.0f}",
                 )
+                logger.info(f"归属人变动 {owner_changes_total} 款，已聚合为单条汇总。")
+            else:
+                for oc in diff.owner_changes:
+                    await self.storage.enqueue_pending(
+                        "owner_change",
+                        {
+                            "appid": oc.app.appid,
+                            "name": oc.app.name,
+                            "added_owners": list(oc.added_owners),
+                            "removed_owners": list(oc.removed_owners),
+                        },
+                        dedupe_key=f"owner:{oc.app.appid}",
+                    )
 
-            for sc in diff.status_changes:
+            status_changes_total = len(diff.status_changes)
+            if status_changes_total > 5:
+                summary_text = f"⚠️ 【Steam 家庭库状态变动】检测到 {status_changes_total} 款游戏状态发生变更，已同步更新。"
                 await self.storage.enqueue_pending(
-                    "status_change",
-                    {
-                        "appid": sc.app.appid,
-                        "name": sc.app.name,
-                        "field": sc.field,
-                        "old": sc.old,
-                        "new": sc.new,
-                    },
-                    dedupe_key=f"status:{sc.app.appid}:{sc.field}",
+                    "summary_notice",
+                    {"text": summary_text},
+                    dedupe_key=f"summary_status:{time.time():.0f}",
                 )
+                logger.info(f"状态变动 {status_changes_total} 款，已聚合为单条汇总。")
+            else:
+                for sc in diff.status_changes:
+                    await self.storage.enqueue_pending(
+                        "status_change",
+                        {
+                            "appid": sc.app.appid,
+                            "name": sc.app.name,
+                            "field": sc.field,
+                            "old": sc.old,
+                            "new": sc.new,
+                        },
+                        dedupe_key=f"status:{sc.app.appid}:{sc.field}",
+                    )
 
             queued_count = (
-                added_enqueued + removed_enqueued + len(diff.owner_changes) + len(diff.status_changes)
+                added_enqueued
+                + removed_enqueued
+                + (1 if owner_changes_total > 5 else owner_changes_total)
+                + (1 if status_changes_total > 5 else status_changes_total)
             )
 
             # 入队完成后立即触发一次推送管线（失败事件留在队列中按指数退避自动重试）
@@ -1224,11 +1269,17 @@ class SteamFamilyPlugin(Star):
         name = str(payload.get("name") or "") or (f"App {appid}" if appid else "未知应用")
 
         # 未知类型：直接消解，避免毒丸事件无限重试；payload 截断到 200 字防日志刷屏
-        if kind not in ("added", "removed", "owner_change", "status_change", "price_drop"):
+        if kind not in ("added", "removed", "owner_change", "status_change", "price_drop", "summary_notice"):
             logger.warning(
                 f"收到未知类型待推送事件 kind={kind}，跳过播报。payload={str(payload)[:200]}"
             )
             return "filtered"
+
+        if kind == "summary_notice":
+            text = str(payload.get("text", ""))
+            if text:
+                await self._send_text_to_subscribers(text, ctx)
+            return "done"
 
         # ------------------------------------------------------------------
         # 过时事件对账（方案B）：storage 不提供按 dedupe_key 删除待处理行的能力，
