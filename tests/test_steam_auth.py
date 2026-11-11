@@ -194,9 +194,7 @@ def _fake_response(status_code=200, json_body=None, eresult="1"):
 
 @pytest.mark.asyncio
 async def test_parse_response_raises_on_eresult_error():
-    resp = _fake_response(
-        json_body={"response": {}}, eresult="5", status_code=200
-    )
+    resp = _fake_response(json_body={"response": {}}, eresult="5", status_code=200)
     with pytest.raises(SteamLoginError) as exc:
         SteamAuthClient._parse_response(resp, "凭据登录")
     assert exc.value.eresult == 5
@@ -205,9 +203,7 @@ async def test_parse_response_raises_on_eresult_error():
 
 @pytest.mark.asyncio
 async def test_parse_response_ok():
-    resp = _fake_response(
-        json_body={"response": {"access_token": "abc"}}, eresult="1"
-    )
+    resp = _fake_response(json_body={"response": {"access_token": "abc"}}, eresult="1")
     assert SteamAuthClient._parse_response(resp, "续期") == {"access_token": "abc"}
 
 
@@ -254,9 +250,7 @@ def test_parse_response_non_dict_json_fails_closed():
 
 def test_parse_response_garbled_eresult_header_fails_closed():
     """x-eresult 头存在但 int() 解析失败：必须抛错，不允许误判为成功。"""
-    resp = _fake_response(
-        status_code=200, json_body={"response": {"keep": 1}}, eresult="garbled"
-    )
+    resp = _fake_response(status_code=200, json_body={"response": {"keep": 1}}, eresult="garbled")
     with pytest.raises(SteamLoginError) as exc:
         SteamAuthClient._parse_response(resp, "凭据登录")
     assert "x-eresult" in str(exc.value)
@@ -317,8 +311,8 @@ async def test_query_server_time_invalid_body_returns_none():
 
 
 @pytest.mark.asyncio
-async def test_login_with_password_totp_uses_server_time_and_retries_next_window():
-    """TOTP 对时：验证码锚定服务器时间生成；88 被拒后自动换 +30 秒窗重试成功。"""
+async def test_login_with_password_totp_uses_server_time_without_guessing_windows():
+    """TOTP 对时：88 被拒后停止提交，清空对时缓存，不猜测相邻窗口。"""
     client = SteamAuthClient()
     submitted: list[str] = []
     submit_calls = {"n": 0}
@@ -351,19 +345,18 @@ async def test_login_with_password_totp_uses_server_time_and_retries_next_window
         patch.object(client, "poll_auth_session", side_effect=fake_poll),
         patch("core.steam_auth.time.time", return_value=1760000000.0),
     ):
-        result = await client.login_with_password(
-            "myaccount", "mypassword", shared_secret=GOLDEN_SECRET
-        )
+        with pytest.raises(SteamLoginError) as exc:
+            await client.login_with_password("myaccount", "mypassword", shared_secret=GOLDEN_SECRET)
 
-    # 黄金向量：1760000000 -> "68793"（被 88 拒），1760000030 -> "XRK6Y"（+30 秒窗重试成功）
-    assert submitted == ["68793", "XRK6Y"], "首码被拒 (88) 后必须换 +30 秒时间窗重试"
-    assert submit_calls["n"] == 2
-    assert result["refresh_token"] == "rt_200d"
+    assert submitted == ["68793"]
+    assert submit_calls["n"] == 1
+    assert exc.value.eresult == 88
+    assert client._server_time_offset is None
 
 
 @pytest.mark.asyncio
-async def test_login_with_password_totp_attempts_capped_at_3():
-    """连续 88 被拒：总尝试不超过 3 次（含 +30 / −30 窗），随后抛出 88，绝不无限撞码触发 84/85。"""
+async def test_login_with_password_totp_attempts_capped_at_one():
+    """每个会话只提交一次验证码；错码必须交给调用方退避/人工检查。"""
     client = SteamAuthClient()
     submit_calls = {"n": 0}
 
@@ -387,11 +380,9 @@ async def test_login_with_password_totp_attempts_capped_at_3():
         patch("core.steam_auth.time.time", return_value=1760000000.0),
     ):
         with pytest.raises(SteamLoginError) as exc:
-            await client.login_with_password(
-                "myaccount", "mypassword", shared_secret=GOLDEN_SECRET
-            )
+            await client.login_with_password("myaccount", "mypassword", shared_secret=GOLDEN_SECRET)
 
-    assert submit_calls["n"] == 3, "Steam max_attempts=3：撞码超过 3 次会触发限流节流"
+    assert submit_calls["n"] == 1
     assert exc.value.eresult == 88
 
 
@@ -445,9 +436,13 @@ async def test_refresh_tokens_builds_correct_form():
     captured = {}
 
     class _AsyncClientStub:
-        async def post(self, url, data=None):
+        async def post(self, url, files=None):
             captured["url"] = url
-            captured["data"] = data
+            from core.steam_auth_proto import _MESSAGES
+
+            request = _MESSAGES["GenerateAccessTokenForApp_Request"]()
+            request.ParseFromString(base64.b64decode(files["input_protobuf_encoded"][1]))
+            captured["data"] = request
             return _fake_response(
                 json_body={
                     "response": {
@@ -462,9 +457,9 @@ async def test_refresh_tokens_builds_correct_form():
     result = await client.refresh_tokens(rt, steamid="", renewal=True)
 
     assert "GenerateAccessTokenForApp" in captured["url"]
-    assert captured["data"]["renewal_type"] == "1", "必须携带 renewal_type=1 才能滚动续期"
-    assert captured["data"]["refresh_token"] == rt
-    assert captured["data"]["steamid"] == "76561198555000001", "steamid 应自动从 JWT 推导"
+    assert captured["data"].renewal_type == 1
+    assert captured["data"].refresh_token == rt
+    assert captured["data"].steamid == 76561198555000001
     assert result["access_token"] == "new_access"
     assert result["refresh_token"] == "brand_new_refresh"
 
@@ -608,9 +603,7 @@ async def test_password_relogin_disabled_by_config():
         set_cred=creds.set,
         cookie_refresh_fn=AsyncMock(return_value=None),
     )
-    manager.auth.refresh_tokens = AsyncMock(
-        side_effect=SteamLoginError("兑换失败", eresult=15)
-    )
+    manager.auth.refresh_tokens = AsyncMock(side_effect=SteamLoginError("兑换失败", eresult=15))
     manager.auth.login_with_password = AsyncMock(
         side_effect=AssertionError("auto relogin disabled but attempted")
     )
@@ -630,9 +623,7 @@ async def test_cookie_fallback_when_all_else_fails():
         set_cred=creds.set,
         cookie_refresh_fn=AsyncMock(return_value=fresh_at),
     )
-    manager.auth.refresh_tokens = AsyncMock(
-        side_effect=SteamLoginError("兑换失败", eresult=15)
-    )
+    manager.auth.refresh_tokens = AsyncMock(side_effect=SteamLoginError("兑换失败", eresult=15))
     assert await manager.ensure_valid_access_token() is True
     assert creds.store["access_token"] == fresh_at
 
@@ -641,9 +632,7 @@ async def test_cookie_fallback_when_all_else_fails():
 async def test_relogin_busy_guard_when_ops_busy():
     """操作互斥：已有登录/续期会话（如扫码确认等待中）时，密码重登不得并行发起。"""
     creds = _MemCreds(account_name="myaccount", password="mypassword", shared_secret="s")
-    manager = SteamAuthManager(
-        auth=MagicMock(), get_cred=creds.get, set_cred=creds.set
-    )
+    manager = SteamAuthManager(auth=MagicMock(), get_cred=creds.get, set_cred=creds.set)
     manager._ops_busy = True
     result = await manager.relogin_with_password()
     assert result.startswith("⏳"), "忙碌期必须给等待提示而非发起第二条登录"
@@ -657,9 +646,7 @@ async def test_exchange_busy_guard_skips():
     """操作互斥：忙碌期间 Refresh Token 兑换直接跳过（False），并留 note 供看板展示。"""
     creds = _MemCreds(refresh_token="rt.some.sub")
     manager = SteamAuthManager(auth=MagicMock(), get_cred=creds.get, set_cred=creds.set)
-    manager.auth.refresh_tokens = AsyncMock(
-        side_effect=AssertionError("busy 期间不得发起兑换")
-    )
+    manager.auth.refresh_tokens = AsyncMock(side_effect=AssertionError("busy 期间不得发起兑换"))
     manager._ops_busy = True
     assert await manager.exchange_refresh_token() is False
     assert "跳过" in manager.last_keepalive_note
@@ -668,9 +655,7 @@ async def test_exchange_busy_guard_skips():
 @pytest.mark.asyncio
 async def test_relogin_requires_credentials():
     creds = _MemCreds()
-    manager = SteamAuthManager(
-        auth=MagicMock(), get_cred=creds.get, set_cred=creds.set
-    )
+    manager = SteamAuthManager(auth=MagicMock(), get_cred=creds.get, set_cred=creds.set)
     result = await manager.relogin_with_password()
     assert result.startswith("⚠️")
     assert "账号名" in result
@@ -678,9 +663,7 @@ async def test_relogin_requires_credentials():
 
 @pytest.mark.asyncio
 async def test_describe_mode_priorities():
-    creds = _MemCreds(
-        account_name="a", password="p", shared_secret="s", refresh_token="rt"
-    )
+    creds = _MemCreds(account_name="a", password="p", shared_secret="s", refresh_token="rt")
     manager = SteamAuthManager(auth=MagicMock(), get_cred=creds.get, set_cred=creds.set)
     # 账号+密码+秘钥 齐备 -> 2FA 全自动重登
     assert "2FA" in manager.describe_mode()
@@ -691,7 +674,7 @@ async def test_describe_mode_priorities():
 
     # 清空密码凭据 -> 只剩 refresh_token -> 滚动续期
     creds.store["account_name"] = ""
-    assert "滚动续期" in manager.describe_mode()
+    assert "会话复用" in manager.describe_mode()
 
     # 清空 refresh_token, 有 Cookie -> Cookie 静默续签
     creds.store["refresh_token"] = ""
@@ -769,7 +752,7 @@ async def test_login_with_password_requires_secret_for_device_guard():
 
 @pytest.mark.asyncio
 async def test_login_with_password_device_confirmation_only_fails_fast():
-    """仅 confirmation_type=6（手机确认弹窗）保护：直接快败并说明原因，绝不进轮询干等 60 秒超时。"""
+    """confirmation_type=4 才是手机确认；自动模式不进轮询空等。"""
     client = SteamAuthClient()
 
     async def fake_begin(account, password, persistence=1):
@@ -778,7 +761,7 @@ async def test_login_with_password_device_confirmation_only_fails_fast():
             "request_id": "r",
             "interval": 0.1,
             "steamid": "123",
-            "allowed_confirmations": [{"confirmation_type": 6}],
+            "allowed_confirmations": [{"confirmation_type": 4}],
         }
 
     poll_mock = AsyncMock(return_value={})
@@ -897,7 +880,13 @@ async def test_run_qr_login_resends_rotated_qr():
 
     poll_results = [
         {"new_challenge_url": "https://s.team/q/NEW2"},
-        {"refresh_token": "rt_200d", "access_token": "at_24h", "account_name": "acc"},
+        {
+            "refresh_token": _make_fake_jwt(
+                {"sub": "76561198555000001", "aud": ["web"], "exp": 9999999999}
+            ),
+            "access_token": "at_24h",
+            "account_name": "acc",
+        },
     ]
 
     async def fake_poll(client_id, request_id):
@@ -929,7 +918,7 @@ async def test_run_qr_login_resends_rotated_qr():
         b"PNG::https://s.team/q/NEW2",
     ], "二维码轮换后必须用新链接重新渲染并重发"
     assert any("s.team/q/NEW2" in t for t in texts), "轮换后必须提示用户扫描新链接"
-    assert creds.store["refresh_token"] == "rt_200d"
+    assert creds.store["refresh_token"]
 
 
 # ---------------------------------------------------------------------------
@@ -939,12 +928,10 @@ async def test_run_qr_login_resends_rotated_qr():
 async def test_refresh_tokens_keeps_new_refresh_token_when_access_token_missing():
     """Steam 只顺延了新 RT 而 access_token 为空：不得抛错丢掉 200 天新令牌。"""
     client = SteamAuthClient(platform_type=PLATFORM_TYPE_MOBILE_APP)
-    rt = _make_fake_jwt(
-        {"aud": ["web", "mobile"], "sub": "76561198555000001", "exp": 9999999999}
-    )
+    rt = _make_fake_jwt({"aud": ["web", "mobile"], "sub": "76561198555000001", "exp": 9999999999})
 
     class _AsyncClientStub:
-        async def post(self, url, data=None):
+        async def post(self, url, files=None):
             return _fake_response(
                 json_body={"response": {"refresh_token": "brand_new_refresh"}}, eresult="1"
             )
@@ -959,12 +946,10 @@ async def test_refresh_tokens_keeps_new_refresh_token_when_access_token_missing(
 async def test_refresh_tokens_raises_when_nothing_returned():
     """既没有 access_token 也没有新 refresh_token：仍按失败抛错。"""
     client = SteamAuthClient(platform_type=PLATFORM_TYPE_MOBILE_APP)
-    rt = _make_fake_jwt(
-        {"aud": ["web", "mobile"], "sub": "76561198555000001", "exp": 9999999999}
-    )
+    rt = _make_fake_jwt({"aud": ["web", "mobile"], "sub": "76561198555000001", "exp": 9999999999})
 
     class _AsyncClientStub:
-        async def post(self, url, data=None):
+        async def post(self, url, files=None):
             return _fake_response(json_body={"response": {}}, eresult="1")
 
     client._client = _AsyncClientStub()

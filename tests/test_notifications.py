@@ -31,6 +31,13 @@ if "astrbot.api.event" not in sys.modules:
     mock_event_module = MagicMock()
 
     class MockFilter:
+        class PermissionType:
+            ADMIN = "admin"
+
+        @staticmethod
+        def permission_type(*args, **kwargs):
+            return lambda func: func
+
         @staticmethod
         def command(*args, **kwargs):
             def decorator(func):
@@ -200,9 +207,7 @@ async def test_removed_event_pushes_text(tmp_path):
     await plugin.storage.init_db()
     await plugin.storage.subscribe("group_1")
     # 预存成员昵称，验证从 member_profiles 解析
-    await plugin.storage.save_member_profiles(
-        {"76561198000000001": {"persona_name": "义父大人"}}
-    )
+    await plugin.storage.save_member_profiles({"76561198000000001": {"persona_name": "义父大人"}})
 
     baseline = [
         SharedApp(appid=100, name="Base", owner_steamids=["76561198000000001"]),
@@ -238,7 +243,12 @@ async def test_owner_change_and_status_change_dispatch(tmp_path):
 
     await plugin.storage.enqueue_pending(
         "owner_change",
-        {"appid": 800, "name": "Elden Ring", "added_owners": ["s1", "s2"], "removed_owners": ["s3"]},
+        {
+            "appid": 800,
+            "name": "Elden Ring",
+            "added_owners": ["s1", "s2"],
+            "removed_owners": ["s3"],
+        },
         dedupe_key="owner:800",
     )
     await plugin.storage.enqueue_pending(
@@ -252,9 +262,7 @@ async def test_owner_change_and_status_change_dispatch(tmp_path):
 
     assert stats["success"] == 2
     texts = _pushed_texts(plugin.context.send_message)
-    assert any(
-        "🔁 《Elden Ring》归属变动：新增义父 甲、乙 / 失去义父 丙" in t for t in texts
-    )
+    assert any("🔁 《Elden Ring》归属变动：新增义父 甲、乙 / 失去义父 丙" in t for t in texts)
     assert any(
         "【Steam 共享属性被去除】《Elden Ring》" in t and "该游戏已被移出家庭共享库" in t
         for t in texts
@@ -270,7 +278,13 @@ async def test_price_drop_skeleton_dispatch(tmp_path):
     await plugin.storage.subscribe("group_1")
     await plugin.storage.enqueue_pending(
         "price_drop",
-        {"appid": 900, "name": "Hades II", "old_price": 199, "new_price": 99, "discount_percent": 50},
+        {
+            "appid": 900,
+            "name": "Hades II",
+            "old_price": 199,
+            "new_price": 99,
+            "discount_percent": 50,
+        },
         dedupe_key="price:900",
     )
     with fake_message_chain():
@@ -290,8 +304,7 @@ async def test_large_removal_safety_valve(tmp_path):
     # 基线 100 款，当前只剩 10 款 → 移出 90 > max(25, 15) → 触发安全阀
     prev_ids = list(range(1000, 1100))
     baseline = [
-        SharedApp(appid=i, name=f"Game {i}", owner_steamids=["76561198000000001"])
-        for i in prev_ids
+        SharedApp(appid=i, name=f"Game {i}", owner_steamids=["76561198000000001"]) for i in prev_ids
     ]
     await plugin.storage.save_snapshot(baseline)
     current = [
@@ -396,7 +409,9 @@ async def test_details_none_still_broadcast(tmp_path):
     )
     plugin.client.get_app_details_batch = AsyncMock(
         return_value={
-            600: AppDetails(appid=600, name="Free Game F", is_free=True, initial_price=0.0, final_price=0.0)
+            600: AppDetails(
+                appid=600, name="Free Game F", is_free=True, initial_price=0.0, final_price=0.0
+            )
         }
     )
     send_count_before = len(_pushed_texts(plugin.context.send_message))

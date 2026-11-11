@@ -660,11 +660,13 @@
         const pill = document.getElementById("tokenStatusPill");
         if (pill) {
           const modeMsg = ti.keepalive_mode ? ` • ${escapeHtml(ti.keepalive_mode)}` : '';
-          if (ti.valid) {
+          if (ti.auth_security_blocked) {
+            pill.innerHTML = `<span style="font-size: 11px; color: var(--accent-rose);">🛑 Steam 安全限制：已暂停认证和同步，请先联系 Steam 官方支持</span>`;
+          } else if (ti.valid) {
             const autoMsg = ti.has_cookie_autorenew ? ' • 🔄 Cookie 自动保活' : '';
-            pill.innerHTML = `<span style="font-size: 11px; background: rgba(34, 197, 94, 0.15); color: var(--steam-green); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(34, 197, 94, 0.3); font-weight: normal;">🟢 Token 有效 (剩 ${Number(ti.remaining_hours)}h${autoMsg})${modeMsg ? modeMsg : ''}</span>`;
+            pill.innerHTML = `<span style="font-size: 11px; background: rgba(34, 197, 94, 0.15); color: var(--steam-green); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(34, 197, 94, 0.3); font-weight: normal;">🟢 Token 尚未到期 (剩 ${Number(ti.remaining_hours)}h${autoMsg})${modeMsg ? modeMsg : ''}</span>`;
           } else {
-            pill.innerHTML = `<span style="font-size: 11px; background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(244, 63, 94, 0.3); font-weight: normal;">🔴 Token 已失效 ${modeMsg || '(扫码 /steam_qr 或配置密码+秘钥激活保活)'}</span>`;
+            pill.innerHTML = `<span style="font-size: 11px; background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(244, 63, 94, 0.3); font-weight: normal;">🔴 Token 缺失或已到期 ${modeMsg || '(先检查账号安全，再私聊登录)'}</span>`;
           }
           const rtInfo = ti.has_refresh_token && ti.refresh_token_days_left
             ? ` • 🎫 Refresh Token 剩 ${Number(ti.refresh_token_days_left)} 天`
@@ -672,6 +674,10 @@
           if (rtInfo) {
             pill.innerHTML += `<span style="font-size: 11px; background: rgba(59, 130, 246, 0.12); color: var(--steam-blue); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(59, 130, 246, 0.25); font-weight: normal; margin-left: 6px;">${rtInfo}</span>`;
           }
+          if (ti.auth_cooldown_remaining) {
+            pill.innerHTML += `<span style="font-size: 11px; color: var(--text-muted); margin-left: 6px;">⏳ 认证冷却剩 ${Number(ti.auth_cooldown_remaining)} 秒</span>`;
+          }
+          pill.title = ti.keepalive_note || '此处只解析 JWT 到期时间，不代表 Steam 服务端已接受凭据';
         }
       }
 

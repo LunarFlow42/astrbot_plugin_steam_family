@@ -8,7 +8,7 @@ class PluginConfig(BaseModel):
     )
     cookie: str = Field(
         default="",
-        description="Steam 网页端 Cookie (或 steamLoginSecure)，填入后可全自动无感刷新 Token 永久保活",
+        description="Steam 网页端 Cookie (或 steamLoginSecure)，仅在有效期间用于复用登录会话",
     )
     steam_id: str = Field(default="", description="绑定的 64 位 SteamID")
     account_name: str = Field(
@@ -25,11 +25,14 @@ class PluginConfig(BaseModel):
     )
     refresh_token: str = Field(
         default="",
-        description="Steam Refresh Token（200 天，插件自动滚动续期并回写，一般无需手动填写）",
+        description="Steam Refresh Token（插件自动保存/复用，寿命与可续期性由 Steam 决定）",
     )
     enable_auto_relogin: bool = Field(
-        default=True,
-        description="是否启用断线全自动重登（路线一：账号密码+2FA秘钥，需填写 account_name/password/shared_secret）",
+        default=False,
+        description="显式允许自动密码重登（默认关闭；需账号密码+2FA秘钥，可能触发设备/异地安全检查）",
+    )
+    auth_device_name: str = Field(
+        default="", description="固定认证设备名称（留空使用宿主机名；不要频繁更换）"
     )
     family_group_id: str = Field(default="", description="Steam 家庭组 ID（留空时将自动获取）")
     poll_interval_minutes: int = Field(

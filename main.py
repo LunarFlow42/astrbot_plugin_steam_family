@@ -43,6 +43,13 @@ except ImportError:
         def llm_tool(*args, **kwargs):
             return lambda f: f
 
+        @staticmethod
+        def permission_type(*args, **kwargs):
+            return lambda f: f
+
+        class PermissionType:
+            ADMIN = "admin"
+
     class AstrMessageEvent:
         unified_msg_origin = "test_umo"
 
@@ -293,17 +300,22 @@ class SteamFamilyPlugin(Star):
         # 受控消息协议下的最近一次检查成功与否（None=未知/未执行到分类器）。
         self._last_check_success: bool | None = None
 
-        # --- "永不掉线" 保活体系: 路线一(密码+2FA秘钥重登) + 路线二(扫码+滚动续期) ---
+        # 会话复用与保守重登：默认不自动创建密码登录会话。
         self._runtime_credentials: dict[str, str] = {}
         self.auth = SteamAuthClient(
-            proxy=self.config.proxy, timeout=self.config.request_timeout
+            proxy=self.config.proxy,
+            timeout=self.config.request_timeout,
+            device_name=self.config.auth_device_name,
         )
         self.auth_manager = SteamAuthManager(
             auth=self.auth,
-            get_cred=lambda name: getattr(self.config, name, "") or "",
-            set_cred=self._save_credentials,
+            get_cred=lambda name: self._runtime_credentials.get(
+                name, getattr(self.config, name, "")
+            ),
+            set_cred=self._persist_auth_credential,
             cookie_refresh_fn=self.client.refresh_token_via_cookie,
             notify_fn=self._broadcast_notify,
+            load_state_fn=lambda: self.storage.get_kv("steam_auth_state"),
         )
 
         # Register AstrBot Web APIs for embedded Plugin Pages
@@ -422,11 +434,17 @@ class SteamFamilyPlugin(Star):
             "has_refresh_token": bool(self.config.refresh_token),
             "refresh_token_days_left": self.auth_manager.refresh_token_days_left(),
             "has_2fa_autologin": bool(
-                self.config.account_name
+                self.auth_manager.auto_relogin_enabled
+                and not self.auth_manager.automatic_login_paused
+                and self.config.account_name
                 and self.config.password
                 and self.config.shared_secret
             ),
             "keepalive_note": self.auth_manager.last_keepalive_note,
+            "auth_security_blocked": self.auth_manager.security_blocked,
+            "auth_cooldown_remaining": self.auth_manager.auth_cooldown_remaining,
+            "automatic_login_paused": self.auth_manager.automatic_login_paused,
+            "auth_device_name": self.auth.device_name,
         }
 
         # 同步状态观测（0.3.0）：最近一次成功同步时间/耗时/结果消息 + 最近游玩面板数据
@@ -547,25 +565,41 @@ class SteamFamilyPlugin(Star):
         if isinstance(raw, dict) and raw:
             # 运行时轮换的凭据优先（防止回读旧配置导致刚续期的 refresh_token 丢失）
             raw = dict(raw)
-            raw.update(self._runtime_credentials)
+            runtime = dict(self._runtime_credentials)
+            # 令牌轮换不能被旧配置覆盖，但设备名称允许管理员显式修改。
+            if raw.get("auth_device_name"):
+                runtime.pop("auth_device_name", None)
+            raw.update(runtime)
             old_proxy = self.client.proxy
             old_timeout = self.client.timeout
+            old_device_name = self.config.auth_device_name
             self.config = PluginConfig(**raw)
-            if (
-                old_proxy != self.config.proxy
-                or old_timeout != self.config.request_timeout
-            ):
+            if self.auth_manager._ops_busy:
+                # 登录/续期会话期间保持客户端与出口不变，新配置下次再应用。
+                self.config.proxy = old_proxy
+                self.config.request_timeout = old_timeout
+                self.config.auth_device_name = old_device_name
+                return
+            if old_proxy != self.config.proxy or old_timeout != self.config.request_timeout:
+                old_client = self.client
                 self.client = SteamFamilyClient(
                     proxy=self.config.proxy,
                     timeout=self.config.request_timeout,
                 )
+                self._spawn(old_client.close())
+            if (
+                old_proxy != self.config.proxy
+                or old_timeout != self.config.request_timeout
+                or old_device_name != self.config.auth_device_name
+            ):
+                old_auth = self.auth
                 self.auth = SteamAuthClient(
                     proxy=self.config.proxy,
                     timeout=self.config.request_timeout,
+                    device_name=self.config.auth_device_name,
                 )
-                self.auth_manager.set_clients(
-                    self.auth, self.client.refresh_token_via_cookie
-                )
+                self.auth_manager.set_clients(self.auth, self.client.refresh_token_via_cookie)
+                self._spawn(old_auth.close())
 
     def _save_credentials(self, key: str, value: str):
         """
@@ -583,15 +617,33 @@ class SteamFamilyPlugin(Star):
             pass
         if self.raw_astr_config is not None:
             try:
-                self.raw_astr_config[key] = value
-                if hasattr(self.raw_astr_config, "save_config"):
-                    self.raw_astr_config.save_config()
+                if key in PluginConfig.model_fields:
+                    self.raw_astr_config[key] = value
+                    if hasattr(self.raw_astr_config, "save_config"):
+                        self.raw_astr_config.save_config()
             except Exception as e:
                 logger.debug(f"Persist credential '{key}' into AstrBotConfig failed: {e}")
         try:
             self._spawn(self.storage.set_kv(key, value))
         except Exception as e:
             logger.debug(f"Persist credential '{key}' into KV storage failed: {e}")
+
+    async def _persist_auth_credential(self, key: str, value: str) -> None:
+        """认证轮换/安全状态必须先落库完成，再允许下一次网络操作。"""
+        value = str(value or "")
+        await self.storage.set_kv(key, value)
+        self._runtime_credentials[key] = value
+        if key in PluginConfig.model_fields:
+            setattr(self.config, key, value)
+            if self.raw_astr_config is not None:
+                self.raw_astr_config[key] = value
+                try:
+                    if hasattr(self.raw_astr_config, "save_config"):
+                        self.raw_astr_config.save_config()
+                except Exception as exc:
+                    logger.warning(
+                        f"AstrBot 配置保存失败，认证凭据已保存至 KV ({type(exc).__name__})"
+                    )
 
     async def _broadcast_notify(self, text: str):
         """向所有订阅会话广播保活事件（如全自动重登成功）。"""
@@ -614,15 +666,55 @@ class SteamFamilyPlugin(Star):
         """
         try:
             for key in ("refresh_token", "access_token"):
-                if not getattr(self.config, key, ""):
-                    value = await self.storage.get_kv(key)
-                    if value:
-                        self._runtime_credentials[key] = value
-                        if hasattr(self.config, key):
-                            setattr(self.config, key, value)
-                        logger.info(f"Restored credential '{key}' from KV storage.")
+                value = await self.storage.get_kv(key)
+                configured = getattr(self.config, key, "")
+                saved_info = decode_steam_jwt(value or "")
+                configured_info = decode_steam_jwt(configured or "")
+                persisted_account_id = await self.storage.get_kv("steam_refresh_account_id")
+                saved_matches_account = not self.config.steam_id or (
+                    saved_info and saved_info.get("steamid") == self.config.steam_id
+                )
+                # Steam 会撤销被轮换掉的旧 RT；KV 更晚签发时不得回读过时配置覆盖它。
+                saved_is_newer = bool(
+                    saved_info
+                    and configured_info
+                    and saved_info.get("steamid") == configured_info.get("steamid")
+                    and saved_info.get("iat", 0) > configured_info.get("iat", 0)
+                )
+                persisted_rt_authoritative = bool(
+                    key == "refresh_token"
+                    and persisted_account_id
+                    and saved_info
+                    and saved_info.get("steamid") == persisted_account_id
+                    and (
+                        not configured_info
+                        or configured_info.get("steamid") == persisted_account_id
+                    )
+                )
+                if (
+                    value
+                    and saved_matches_account
+                    and (not configured or saved_is_newer or persisted_rt_authoritative)
+                ):
+                    self._runtime_credentials[key] = value
+                    if hasattr(self.config, key):
+                        setattr(self.config, key, value)
+                    logger.info(f"Restored credential '{key}' from KV storage.")
+            for key in ("steam_guard_data", "steam_guard_account"):
+                value = await self.storage.get_kv(key)
+                if value:
+                    self._runtime_credentials[key] = value
+            await self.auth_manager.ensure_state_loaded()
+            if not self.config.auth_device_name:
+                saved_name = await self.storage.get_kv("auth_device_name")
+                await self._persist_auth_credential(
+                    "auth_device_name", saved_name or self.auth.device_name
+                )
+                self.auth.device_name = self.config.auth_device_name
         except Exception as e:
-            logger.debug(f"Restore credentials from KV failed: {e}")
+            # 安全状态读取失败时停止初始化，不以空白安全状态继续登录。
+            logger.error(f"Restore credentials/security state failed: {type(e).__name__}")
+            raise
         if not self.config.steam_id:
             steam_id = steamid_from_refresh_token(self.config.refresh_token or "")
             if not steam_id and self.config.access_token:
@@ -642,16 +734,10 @@ class SteamFamilyPlugin(Star):
             # 已完成快照落库但未播报的变动）由统一收款/播报管线一次性补偿推送。
             self._spawn(self._drain_pending_notifications())
 
-            # Auto-acquire token if cookie is configured
-            if not self.config.access_token and self.config.cookie:
-                new_token = await self.client.refresh_token_via_cookie(self.config.cookie)
-                if new_token:
-                    self.config.access_token = new_token
-                    logger.info("Automatically initialized Steam Access Token from Cookie.")
-
             # 自动保活: access_token 缺失但配置了 refresh_token / 密码重登时，先尝试补齐。
             if not self.config.access_token and (
                 self.config.refresh_token
+                or self.config.cookie
                 or (self.config.account_name and self.config.password)
             ):
                 try:
@@ -754,21 +840,36 @@ class SteamFamilyPlugin(Star):
                 logger.debug(f"Failed to schedule price watch sweep: {ex}")
         return msg
 
-    async def _recover_after_auth_expired(self) -> bool:
-        """Steam 401/403 后的统一恢复链：强制保活（滚动续期 → 密码自动重登 → Cookie 兜底）。
+    async def _recover_after_auth_expired(self, error: SteamAuthExpiredError | None = None) -> bool:
+        """Steam 401/403 后先检查显式安全错误，再尝试复用授权（不绕过冷却）。
 
         get_shared_library / get_family_group_id 等遇 SteamAuthExpiredError 时共用，
         返回 True 表示 access_token 已被强制刷新，调用方可安全重试原请求一次。
         """
         logger.info("Steam 返回 401/403，触发强制保活链路后重试...")
         try:
+            if error is not None:
+                await self.auth_manager.record_api_auth_failure(error.eresult)
             return await self.auth_manager.ensure_valid_access_token(force=True)
         except Exception as e:
             logger.error(f"Force keepalive after 401 failed: {_sanitize_error(e)}")
             return False
 
+    def _auth_failure_message(self) -> str:
+        note = self.auth_manager.last_keepalive_note
+        return (
+            f"⚠️ Steam 凭据未被服务端接受，本次未能恢复：{note or '请检查网络、授权或账号安全提示'}。"
+            "请先处理 Steam 官方安全提示并等待冷却，不要连续扫码或密码登录。"
+        )
+
     async def _check_and_notify_core(self) -> str:
         self._refresh_config()
+        try:
+            await self.auth_manager.ensure_state_loaded()
+        except Exception as exc:
+            return f"⚠️ 无法读取认证安全状态，已停止本次 Steam 请求：{_sanitize_error(exc)}"
+        if self.auth_manager.security_blocked:
+            return "⚠️ Steam 已返回账号/IP/设备安全限制，插件已暂停 Steam 请求；请先通过 Steam 官方支持处理账号限制"
         logger.info(
             f"Checking Steam Family. Token present: {bool(self.config.access_token)}, "
             f"RefreshToken present: {bool(self.config.refresh_token)}, "
@@ -776,34 +877,27 @@ class SteamFamilyPlugin(Star):
             f"SteamID: {self.config.steam_id}"
         )
 
-        # 1. 全自动保活预检（"永不掉线"核心）：
+        # 1. 认证预检：优先复用已有授权，安全限制时停止。
         #    Access Token 新鲜 -> 零开销直接通过；
-        #    即将过期/已过期 -> 依次尝试 路线二滚动续期(renewal_type=1) ->
-        #    路线一账号密码+2FA秘钥全自动重登 -> Cookie 静默刷新兜底。
+        #    即将过期/已过期 -> Refresh Token / Cookie 复用；
+        #    仅显式启用且旧授权确认失效后进行密码重登。
         try:
             alive = await self.auth_manager.ensure_valid_access_token()
             if not alive:
-                logger.warning(
-                    f"Token 保活预检未完成: {self.auth_manager.last_keepalive_note}"
-                )
+                logger.warning(f"Token 保活预检未完成: {self.auth_manager.last_keepalive_note}")
         except SteamLoginError as e:
             logger.warning(f"Token 保活预检异常: {e}")
         except Exception as e:
             logger.error(f"Token 保活预检异常: {_sanitize_error(e)}", exc_info=True)
 
+        if self.auth_manager.security_blocked:
+            return "⚠️ Steam 返回账号/IP/设备安全限制，认证及同步已暂停；请通过 Steam 官方支持处理，不要反复扫码或密码登录"
+
         jwt_info = decode_steam_jwt(self.config.access_token)
 
         # 2. Token 仍缺失时给出针对性指引
         if not self.config.access_token:
-            if self.config.cookie:
-                return (
-                    "⚠️ Steam Access Token 已失效，且滚动续期 / 自动重登 / Cookie 全部保活链路失败，"
-                    "请检查 Cookie 有效性，或使用 /steam_qr 扫码重新绑定！"
-                )
-            return (
-                "⚠️ 未检测到任何有效凭据：请使用 /steam_qr 扫码登录（推荐，200 天令牌自动滚动续期），"
-                "或在 WebUI 填入账号密码 + shared_secret 开启全自动重登保活！"
-            )
+            return self._auth_failure_message()
 
         # SteamID 缺失时自动从 Access Token JWT 声明或 Refresh Token 声明推导
         if not self.config.steam_id and jwt_info and jwt_info.get("steamid"):
@@ -828,20 +922,12 @@ class SteamFamilyPlugin(Star):
                     group_id = await self.client.get_family_group_id(
                         self.config.access_token, self.config.steam_id
                     )
-                except SteamAuthExpiredError:
+                except SteamAuthExpiredError as exc:
                     # 与 get_shared_library 相同的 401 恢复链：强制保活后重试一次，
                     # 避免 Token 恰好过期时直接落到底部兜底文案而错过自动恢复。
-                    recovered = await self._recover_after_auth_expired()
+                    recovered = await self._recover_after_auth_expired(exc)
                     if not recovered:
-                        if self.config.cookie:
-                            return (
-                                "⚠️ Steam Access Token 已失效，且滚动续期 / 自动重登 / Cookie 全部失败，"
-                                "请检查 Cookie 或重新扫码绑定 (/steam_qr)！"
-                            )
-                        return (
-                            "⚠️ Steam Access Token 已彻底失效且无法自动恢复："
-                            "请使用 /steam_qr 扫码登录，或在 WebUI 填入账号+密码+shared_secret 启用全自动重登！"
-                        )
+                        return self._auth_failure_message()
                     group_id = await self.client.get_family_group_id(
                         self.config.access_token, self.config.steam_id
                     )
@@ -857,25 +943,17 @@ class SteamFamilyPlugin(Star):
                     self.config.access_token,
                     filter_non_games=self.config.filter_non_games,
                 )
-            except SteamAuthExpiredError:
-                # 强制走一遍保活链路（滚动续期 -> 账号密码自动重登 -> Cookie 兜底）后重试一次
-                recovered = await self._recover_after_auth_expired()
+            except SteamAuthExpiredError as exc:
+                # 先检查安全限制，复用现有授权后最多重试一次。
+                recovered = await self._recover_after_auth_expired(exc)
                 if recovered:
                     current_apps = await self.client.get_shared_library(
                         group_id,
                         self.config.access_token,
                         filter_non_games=self.config.filter_non_games,
                     )
-                elif self.config.cookie:
-                    return (
-                        "⚠️ Steam Access Token 已失效，且滚动续期 / 自动重登 / Cookie 全部失败，"
-                        "请检查 Cookie 或重新扫码绑定 (/steam_qr)！"
-                    )
                 else:
-                    return (
-                        "⚠️ Steam Access Token 已彻底失效且无法自动恢复："
-                        "请使用 /steam_qr 扫码登录，或在 WebUI 填入账号+密码+shared_secret 启用全自动重登！"
-                    )
+                    return self._auth_failure_message()
 
             if not current_apps:
                 return f"⚠️ 成功连接到 Steam 家庭组 (ID: {group_id})，但获取到的共享游戏列表为空（可能家庭组内无共享游戏或被 Steam 过滤）。"
@@ -889,6 +967,10 @@ class SteamFamilyPlugin(Star):
                 )
                 if playtime_entries:
                     await self.storage.refresh_playtime_stats(playtime_entries)
+            except SteamAuthExpiredError as exc:
+                await self.auth_manager.record_api_auth_failure(exc.eresult)
+                if self.auth_manager.security_blocked:
+                    return self._auth_failure_message()
             except Exception as ex:
                 logger.debug(f"Failed to refresh playtime stats: {ex}")
 
@@ -979,9 +1061,7 @@ class SteamFamilyPlugin(Star):
                     dedupe_key=f"summary_removed:{time.time():.0f}",
                 )
                 removed_enqueued = 1
-                logger.warning(
-                    f"检测到大规模移出 {removed_total} 款，已聚合为汇总消息播报。"
-                )
+                logger.warning(f"检测到大规模移出 {removed_total} 款，已聚合为汇总消息播报。")
             else:
                 for app in diff.removed_apps:
                     prev_app = prev_snapshot.get(app.appid) if prev_snapshot else None
@@ -1069,9 +1149,7 @@ class SteamFamilyPlugin(Star):
             if large_removal:
                 # 注意：此处为"信息性提示"（检查本身成功），禁用 ⚠️ 前缀以免被
                 # 受控消息协议分类器误判为同步失败（会触发无谓轮询退避 + 看板红标）。
-                lines.append(
-                    f"🛡️ 检测到大规模移出（{removed_total} 款），已跳过播报仅更新基线。"
-                )
+                lines.append(f"🛡️ 检测到大规模移出（{removed_total} 款），已跳过播报仅更新基线。")
             if queued_count > 0:
                 detail = (
                     f"✅ 家庭库变动检查完成：已入队 {queued_count} 条变动事件"
@@ -1099,15 +1177,11 @@ class SteamFamilyPlugin(Star):
                 detail += "。"
                 lines.append(detail)
             else:
-                lines.append(
-                    f"✅ 家庭库检查完成：基线已更新为 {len(current_apps)} 款游戏。"
-                )
+                lines.append(f"✅ 家庭库检查完成：基线已更新为 {len(current_apps)} 款游戏。")
             return "\n".join(lines)
-        except SteamAuthExpiredError:
-            return (
-                "⚠️ Steam Access Token 已失效且本次未能自动恢复，"
-                "请使用 /steam_qr 扫码登录，或检查账号密码+shared_secret 全自动重登配置！"
-            )
+        except SteamAuthExpiredError as exc:
+            await self.auth_manager.record_api_auth_failure(exc.eresult)
+            return self._auth_failure_message()
         except SteamRateLimitError:
             return "⚠️ 请求过于频繁触发 Steam 限流 (429)，请稍后重试。"
         except Exception as e:
@@ -1247,7 +1321,9 @@ class SteamFamilyPlugin(Star):
                 return stats
         except Exception as ex:
             # 管线级兜底：任何意外异常都不允许让后台任务崩溃
-            logger.error(f"Drain pending notifications failed: {_sanitize_error(ex)}", exc_info=True)
+            logger.error(
+                f"Drain pending notifications failed: {_sanitize_error(ex)}", exc_info=True
+            )
             return stats
 
     async def _process_pending_event(
@@ -1269,7 +1345,14 @@ class SteamFamilyPlugin(Star):
         name = str(payload.get("name") or "") or (f"App {appid}" if appid else "未知应用")
 
         # 未知类型：直接消解，避免毒丸事件无限重试；payload 截断到 200 字防日志刷屏
-        if kind not in ("added", "removed", "owner_change", "status_change", "price_drop", "summary_notice"):
+        if kind not in (
+            "added",
+            "removed",
+            "owner_change",
+            "status_change",
+            "price_drop",
+            "summary_notice",
+        ):
             logger.warning(
                 f"收到未知类型待推送事件 kind={kind}，跳过播报。payload={str(payload)[:200]}"
             )
@@ -1294,11 +1377,7 @@ class SteamFamilyPlugin(Star):
         if reconcile_snapshot is not None and kind == "removed" and appid in reconcile_snapshot:
             logger.info(f"过时移出事件已静默消解：《{name}》(AppID {appid}) 已重新在库。")
             return "filtered"
-        if (
-            reconcile_snapshot is not None
-            and kind == "added"
-            and appid not in reconcile_snapshot
-        ):
+        if reconcile_snapshot is not None and kind == "added" and appid not in reconcile_snapshot:
             logger.info(f"过时入库事件已静默消解：《{name}》(AppID {appid}) 已不在最新快照中。")
             return "filtered"
 
@@ -1401,9 +1480,7 @@ class SteamFamilyPlugin(Star):
         # Render card（无评价数据时中性展示：好评率 0、摘要"暂无评价"，绝不虚构）
         card_data = {
             "appid": appid,
-            "game_name": (
-                details.chinese_name if details and details.chinese_name else name
-            )
+            "game_name": (details.chinese_name if details and details.chinese_name else name)
             or name,
             "original_name": name,
             "header_image": (details.header_image if details else "")
@@ -1644,7 +1721,9 @@ class SteamFamilyPlugin(Star):
                             dedupe_key=f"price_drop:{appid}:{int(new_final * 100)}",
                         )
                     # 无论是否降价都刷新缓存价格（保持看板估值与商店同步）
-                    await self.storage.update_prices(appid, new_initial, new_final, int(new_discount))
+                    await self.storage.update_prices(
+                        appid, new_initial, new_final, int(new_discount)
+                    )
                 except Exception as ex:
                     # 单个游戏的异常不影响整轮扫描
                     logger.debug(f"价格监控处理 AppID {appid} 失败: {ex}")
@@ -1669,8 +1748,7 @@ class SteamFamilyPlugin(Star):
                     )
                 await asyncio.sleep(interval_secs)
 
-                # 每个轮询周期都先跑一次保活：只要插件每天在跑，
-                # renewal_type=1 滚动续期就会把 200 天 Refresh Token 无限顺延。
+                # 每轮同步先检查凭据；复用、续签能力及有效期由 Steam 决定。
                 has_credentials = bool(
                     self.config.access_token
                     or self.config.refresh_token
@@ -1699,24 +1777,25 @@ class SteamFamilyPlugin(Star):
         """防御性判断当前会话是否群聊（敏感凭据类命令的群聊拒绝用）。
 
         不同适配器的事件实现不一：优先 event.get_group_id()，回退 event.group_id
-        属性；任何异常一律视为"非群聊"放行，保证对未来适配器向前兼容。
+        属性；无法确认私聊时拒绝敏感凭据操作，不能以异常默认放行。
         """
         try:
             get_group_id = getattr(event, "get_group_id", None)
             if callable(get_group_id):
                 return bool(get_group_id())
-            return bool(getattr(event, "group_id", None))
+            if hasattr(event, "group_id"):
+                return bool(event.group_id)
+            return True
         except Exception:
-            return False
+            return True
 
     @filter.command("steam_bind", alias={"steam bind", "steam绑定"})
+    @filter.permission_type(filter.PermissionType.ADMIN)
     async def cmd_bind(self, event: AstrMessageEvent, access_token: str, steam_id: str = ""):
         """绑定 Steam Access Token 和 SteamID。例: /steam_bind eyJhb... 76561198..."""
         # 防御：access_token 属等值凭据，禁止在群聊中明文提交（聊天记录会永久留痕）
         if self._is_group_chat(event):
-            yield event.plain_result(
-                "⚠️ 敏感凭据操作请勿在群聊执行，请私聊我或在 WebUI 配置。"
-            )
+            yield event.plain_result("⚠️ 敏感凭据操作请勿在群聊执行，请私聊我或在 WebUI 配置。")
             return
         self._save_credentials("access_token", access_token)
         if steam_id:
@@ -1724,9 +1803,27 @@ class SteamFamilyPlugin(Star):
         yield event.plain_result("✅ Steam 凭据绑定成功！正在立即拉取家庭库并更新大盘数据...")
         self._spawn(self._check_and_notify())
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("steam_auth_resume", alias={"steam auth_resume", "steam恢复认证"})
+    async def cmd_auth_resume(self, event: AstrMessageEvent):
+        """管理员已在 Steam 官方渠道处理安全限制后，显式恢复本地暂停状态。"""
+        if self._is_group_chat(event):
+            yield event.plain_result(
+                "⚠️ 请私聊管理员指令 /steam_auth_resume，并先处理 Steam 官方账号限制。"
+            )
+            return
+        result = await self.auth_manager.resume_after_security_review()
+        yield event.plain_result(result)
+
     @filter.command("steam_qr", alias={"steam qr", "steam扫码"})
+    @filter.permission_type(filter.PermissionType.ADMIN)
     async def cmd_qr_login(self, event: AstrMessageEvent):
-        """📱 路线二·扫码登录：伪装手机 Steam App 发起扫码，获取 200 天令牌并自动开启滚动续期（无限续杯）。"""
+        """扫码登录：固定浏览器设备身份，必须核对 Steam 官方 App 的位置与设备。"""
+        if self._is_group_chat(event):
+            yield event.plain_result(
+                "⚠️ 登录二维码属于敏感授权，请私聊使用 /steam_qr，不要在群里登录。"
+            )
+            return
         umo = getattr(event, "unified_msg_origin", "test_umo")
 
         async def send_text(text: str):
@@ -1737,14 +1834,14 @@ class SteamFamilyPlugin(Star):
 
         async def send_image(data: bytes):
             try:
-                await self.context.send_message(
-                    umo, MessageChain([Comp.Image.fromBytes(data)])
-                )
+                await self.context.send_message(umo, MessageChain([Comp.Image.fromBytes(data)]))
             except Exception as ex:
                 logger.error(f"Failed to send QR image: {ex}")
                 await send_text("🖼️ 二维码图片发送失败，请直接复制上方链接到浏览器打开后扫码。")
 
-        yield event.plain_result("⏳ 正在创建 Steam 扫码登录会话（手机 App 风格）...")
+        yield event.plain_result(
+            "⏳ 正在创建 Steam 扫码会话；请核对设备和位置，账号受限时不要再次登录。"
+        )
         try:
             result = await self.auth_manager.run_qr_login(
                 send_text=send_text, send_image=send_image
@@ -1759,23 +1856,36 @@ class SteamFamilyPlugin(Star):
             self._spawn(self._check_and_notify())
 
     @filter.command("steam_relogin", alias={"steam relogin", "steam重登"})
+    @filter.permission_type(filter.PermissionType.ADMIN)
     async def cmd_relogin(self, event: AstrMessageEvent):
-        """🔐 路线一·全自动重登：立即用账号密码 + shared_secret 本地算码完成重登（ASF 同款）。"""
+        """手动密码登录：优先记住设备授权，需要手机确认时等待用户处理。"""
+        if self._is_group_chat(event):
+            yield event.plain_result("⚠️ 登录属于敏感凭据操作，请私聊使用 /steam_relogin。")
+            return
         yield event.plain_result(
-            "⏳ 正在全自动重登流程：RSA 加密密码 → 发起登录 → 本地计算 2FA 验证码 → 领取全新 200 天令牌..."
+            "⏳ 正在登录：RSA 加密 → 复用设备授权 → Steam Guard 验证；请核对设备位置。"
         )
-        result = await self.auth_manager.relogin_with_password()
+
+        async def notify_confirmation(text: str):
+            await self.context.send_message(
+                event.unified_msg_origin, MessageChain([Comp.Plain(text)])
+            )
+
+        result = await self.auth_manager.relogin_with_password(
+            interactive=True, on_confirmation_required=notify_confirmation
+        )
         yield event.plain_result(result)
         if result.startswith("✅"):
             self._spawn(self._check_and_notify())
 
     @filter.command("steam_refresh", alias={"steam refresh", "steam续期"})
+    @filter.permission_type(filter.PermissionType.ADMIN)
     async def cmd_refresh(self, event: AstrMessageEvent):
-        """🔄 路线二·手动滚动续期：renewal_type=1 兑换新令牌，Steam 会顺延 200 天 Refresh Token。"""
+        """手动请求复用已有 Refresh Token，不能绕过冷却或账号安全暂停。"""
         yield event.plain_result("⏳ 正在使用 Refresh Token 兑换 Access Token (renewal_type=1)...")
         if not self.config.refresh_token:
             yield event.plain_result(
-                "⚠️ 尚无 Refresh Token，请先使用 /steam_qr 扫码登录获取一张 200 天「续杯卡」。"
+                "⚠️ 尚无 Refresh Token。确认账号没有安全限制后，可由管理员私聊 /steam_qr 登录。"
             )
             return
         success = False
@@ -1788,23 +1898,22 @@ class SteamFamilyPlugin(Star):
         if success:
             yield event.plain_result(
                 "✅ 滚动续期完成！\n"
-                f"🎫 Refresh Token 剩余寿命: {rt_days} 天（Steam 认为无需顺延时保持原值，寿命不足时会自动重置为 200 天）\n"
+                f"🎫 Refresh Token 剩余寿命: {rt_days} 天（续签是否成功、是否延长由 Steam 决定）\n"
                 f"⏰ Access Token 剩余: {at_hours} 小时"
             )
         else:
             yield event.plain_result(
                 f"❌ 滚动续期失败: {self.auth_manager.last_keepalive_note}\n"
-                "若 Refresh Token 已彻底失效，可尝试 /steam_relogin (需配置密码+秘钥) 或 /steam_qr 重新扫码。"
+                "请先检查账号安全提示并等待冷却；不要在限流或账号受限期间反复登录。"
             )
 
     @filter.command("steam_code", alias={"steam code", "steam令牌"})
+    @filter.permission_type(filter.PermissionType.ADMIN)
     async def cmd_code(self, event: AstrMessageEvent):
         """🔑 实时计算当前 5 位 Steam 令牌验证码（需配置 shared_secret，等于手机令牌）。"""
         # 防御：令牌验证码属敏感凭据，群聊中拒绝展示
         if self._is_group_chat(event):
-            yield event.plain_result(
-                "⚠️ 敏感凭据操作请勿在群聊执行，请私聊我或在 WebUI 配置。"
-            )
+            yield event.plain_result("⚠️ 敏感凭据操作请勿在群聊执行，请私聊我或在 WebUI 配置。")
             return
         if not self.config.shared_secret:
             yield event.plain_result(
@@ -1817,18 +1926,23 @@ class SteamFamilyPlugin(Star):
             secs = 30 - int(time.time()) % 30
             yield event.plain_result(f"🔑 当前 Steam 令牌验证码: {code}\n⏱ {secs} 秒后自动刷新")
         except Exception as e:
-            yield event.plain_result(f"❌ 计算验证码失败（shared_secret 格式可能不正确，应为 Base64）: {e}")
+            yield event.plain_result(
+                f"❌ 计算验证码失败（shared_secret 格式可能不正确，应为 Base64）: {e}"
+            )
 
     @filter.command("steam_cred", alias={"steam cred", "steam凭据"})
+    @filter.permission_type(filter.PermissionType.ADMIN)
     async def cmd_cred(
-        self, event: AstrMessageEvent, account_name: str = "", password: str = "", shared_secret: str = ""
+        self,
+        event: AstrMessageEvent,
+        account_name: str = "",
+        password: str = "",
+        shared_secret: str = "",
     ):
         """🔐 保存路线一保活凭据。例: /steam_cred 账号名 密码 cWFhYmJjY2RkZA==（shared_secret 可选，但不填将无法自动过锁）"""
         # 防御：账号/密码/shared_secret 属等值凭据，禁止在群聊中明文提交
         if self._is_group_chat(event):
-            yield event.plain_result(
-                "⚠️ 敏感凭据操作请勿在群聊执行，请私聊我或在 WebUI 配置。"
-            )
+            yield event.plain_result("⚠️ 敏感凭据操作请勿在群聊执行，请私聊我或在 WebUI 配置。")
             return
         if not account_name or not password:
             yield event.plain_result(
@@ -1844,10 +1958,8 @@ class SteamFamilyPlugin(Star):
         yield event.plain_result(
             "✅ 路线一保活凭据已保存（账号+密码"
             + ("+2FA秘钥" if shared_secret else "，未填秘钥")
-            + "）。正在立即验证全自动重登链路..."
+            + "）。此操作只保存配置，不会立即创建新登录设备；需要验证时请私聊 /steam_relogin。"
         )
-        result = await self.auth_manager.relogin_with_password()
-        yield event.plain_result(result)
 
     @filter.command("steam_check", alias={"steam check", "steam同步", "家庭库检查"})
     async def cmd_check(self, event: AstrMessageEvent):
@@ -1919,7 +2031,9 @@ class SteamFamilyPlugin(Star):
             all_names_catalog = "、".join(sorted(all_game_names))
 
             # 2. 依托基模强大认知，提取直观匹配词，并补充高分代表游戏
-            raw_tokens = [t.lower() for t in query.replace("，", " ").replace("。", " ").split() if len(t) > 1]
+            raw_tokens = [
+                t.lower() for t in query.replace("，", " ").replace("。", " ").split() if len(t) > 1
+            ]
             matched_apps = []
             other_apps = []
             for a in all_cached:
@@ -1939,7 +2053,9 @@ class SteamFamilyPlugin(Star):
                 f"• 《{a.chinese_name or a.name}》(原名:{a.name}, 现价:¥{a.final_price:.1f}, 好评率:{a.positive_rate}%, 评价:{a.review_summary or '暂无'}, 标签:{','.join(a.genres[:4])})"
                 for a in candidates
             ]
-            detailed_context = "\n".join(detailed_summaries) if detailed_summaries else "暂无游戏缓存数据"
+            detailed_context = (
+                "\n".join(detailed_summaries) if detailed_summaries else "暂无游戏缓存数据"
+            )
 
             system_prompt = (
                 "你是一个幽默风趣、见多识广的 Steam 资深游戏专家与家庭库管家。\n"
@@ -1989,9 +2105,10 @@ class SteamFamilyPlugin(Star):
         """查看 Steam 家庭管家所有支持的指令列表。"""
         help_msg = (
             "🎮 【Steam 家庭资产管家指令列表】\n"
-            "🔄 保活（永不掉线）:\n"
-            "• /steam_qr - 📱 扫码登录（200天令牌+自动滚动续期·无限续杯）\n"
-            "• /steam_relogin - 🔐 账号密码+2FA秘钥 全自动重登（ASF同款·100%永生）\n"
+            "🔄 登录与会话复用（管理员操作）:\n"
+            "• /steam_qr - 📱 私聊扫码登录（核对设备与位置，不保证固定令牌寿命）\n"
+            "• /steam_relogin - 🔐 私聊密码登录，Steam 需要人工确认时请处理提示\n"
+            "• /steam_auth_resume - 🛑 处理官方账号限制后恢复本地认证暂停（不发起登录）\n"
             "• /steam_refresh - 🛢️ 手动滚动续期一次 Refresh Token\n"
             "• /steam_code - 🔑 显示当前 5 位 Steam 令牌动态验证码\n"
             "• /steam_cred <账号> <密码> [秘钥] - 保存全自动重登凭据\n"

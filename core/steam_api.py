@@ -90,6 +90,10 @@ def decode_steam_jwt(token: str) -> dict[str, Any] | None:
 class SteamAuthExpiredError(Exception):
     """Raised when Steam Access Token has expired or is invalid."""
 
+    def __init__(self, message: str, eresult: int = 0):
+        super().__init__(message)
+        self.eresult = eresult
+
 
 class SteamRateLimitError(Exception):
     """Raised when Steam rate limit (429) is encountered."""
@@ -162,6 +166,8 @@ class SteamFamilyClient:
         self._client = httpx.AsyncClient(
             proxy=self.proxy or None,
             timeout=self.timeout,
+            # 与认证客户端保持同一显式网络配置；不意外读取环境中的另一条代理。
+            trust_env=False,
             headers={
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
             },
@@ -219,12 +225,15 @@ class SteamFamilyClient:
             )
             url = "https://store.steampowered.com/pointssummary/ajaxgetasyncconfig"
             resp = await self._client.get(url, headers={"Cookie": cookie_header})
+            self._check_auth_result(resp)
             if resp.status_code == 200:
                 data = resp.json()
                 token = data.get("data", {}).get("webapi_token")
                 if token:
                     logger.info("Successfully auto-refreshed Steam Access Token via Cookie.")
                     return token
+        except SteamAuthExpiredError:
+            raise
         except Exception as e:
             logger.warning(f"Failed to auto-refresh token via cookie: {e}")
         return None
@@ -233,6 +242,7 @@ class SteamFamilyClient:
         url = "https://api.steampowered.com/IFamilyGroupsService/GetFamilyGroupForUser/v1/"
         params = {"access_token": access_token, "steamid": steam_id}
         resp = await self._client.get(url, params=params)
+        self._check_auth_result(resp)
         if resp.status_code == 401 or resp.status_code == 403:
             raise SteamAuthExpiredError("Steam Access Token expired or unauthorized.")
         if resp.status_code == 429:
@@ -263,6 +273,7 @@ class SteamFamilyClient:
         for attempt in range(retries):
             try:
                 resp = await self._client.get(url, params=params)
+                self._check_auth_result(resp)
                 if resp.status_code in (401, 403):
                     raise SteamAuthExpiredError("Steam Access Token expired.")
                 if resp.status_code == 429:
@@ -297,6 +308,7 @@ class SteamFamilyClient:
         }
         try:
             resp = await self._client.get(url, params=params)
+            self._check_auth_result(resp)
             if resp.status_code in (401, 403):
                 raise SteamAuthExpiredError("Steam Access Token expired.")
             if resp.status_code == 200:
@@ -304,9 +316,21 @@ class SteamFamilyClient:
                 self._reset_429_streak_on_2xx()
                 data = resp.json()
                 return data.get("response", {}).get("entries", [])
+        except SteamAuthExpiredError:
+            raise
         except Exception as e:
             logger.debug(f"Failed to fetch playtime summary: {e}")
         return []
+
+    @staticmethod
+    def _check_auth_result(resp: httpx.Response) -> None:
+        # 保留 Steam 明确返回的限制代码，不能一概当成普通过期后自动重登。
+        try:
+            eresult = int(resp.headers.get("x-eresult", 1))
+        except (TypeError, ValueError):
+            return
+        if eresult in {5, 15, 17, 26, 27, 43, 72, 73, 82, 83, 85, 87, 105, 126}:
+            raise SteamAuthExpiredError("Steam 拒绝当前授权或返回安全限制", eresult=eresult)
 
     async def get_player_summaries(
         self, steamids: list[str], access_token: str = ""

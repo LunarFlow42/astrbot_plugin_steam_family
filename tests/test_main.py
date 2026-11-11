@@ -26,6 +26,13 @@ if "astrbot.api.event" not in sys.modules:
     mock_event_module = MagicMock()
 
     class MockFilter:
+        class PermissionType:
+            ADMIN = "admin"
+
+        @staticmethod
+        def permission_type(*args, **kwargs):
+            return lambda func: func
+
         @staticmethod
         def command(*args, **kwargs):
             def decorator(func):
@@ -70,6 +77,25 @@ def _isolate_plugin_data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr("main._get_db_path", lambda: str(tmp_path / "engine.db"))
 
 
+@pytest.fixture(autouse=True)
+async def _close_test_plugins(monkeypatch):
+    """回收测试启动的 KV 写入任务，避免 SQLite 工作线程跑到事件循环已关闭。"""
+    plugins = []
+    original_init = SteamFamilyPlugin.__init__
+
+    def construct(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        plugins.append(self)
+
+    monkeypatch.setattr(SteamFamilyPlugin, "__init__", construct)
+    yield
+    for plugin in plugins:
+        pending = [task for task in plugin._bg_tasks if not task.done()]
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        await plugin.terminate()
+
+
 @pytest.mark.asyncio
 async def test_plugin_init_and_bind(tmp_path):
     mock_context = MagicMock()
@@ -92,9 +118,7 @@ async def test_plugin_init_and_bind(tmp_path):
         # 补 check 链路触达的接口（含 playtime/价格批量/商店详情）逐项 AsyncMock
         _offline_client(plugin)
         plugin.client.get_shared_library = AsyncMock(
-            return_value=[
-                SharedApp(appid=100, name="Game A", owner_steamids=["76561198000000002"])
-            ]
+            return_value=[SharedApp(appid=100, name="Game A", owner_steamids=["76561198000000002"])]
         )
         plugin.auth_manager.ensure_valid_access_token = AsyncMock(return_value=True)
 
@@ -293,7 +317,9 @@ async def test_sensitive_commands_refused_in_group_chat(tmp_path):
         group_event = _chat_event(group_id="12345")
 
         # /steam_bind：群聊拒绝，且绝不落库保存 token
-        results = [r async for r in plugin.cmd_bind(group_event, "group_token", "76561198000000002")]
+        results = [
+            r async for r in plugin.cmd_bind(group_event, "group_token", "76561198000000002")
+        ]
         assert "请勿在群聊执行" in results[0]
         assert plugin.config.access_token == "old_token"
 
@@ -307,12 +333,12 @@ async def test_sensitive_commands_refused_in_group_chat(tmp_path):
         assert plugin.config.account_name != "acc"
         assert plugin.config.password != "pwd"
 
-        # 兼容未来适配器：get_group_id 抛异常时保守放行（不误伤私聊场景）
+        # 无法确认私聊时必须拒绝显示验证码，不能以适配器异常默认放行
         weird_event = MagicMock()
         weird_event.plain_result = lambda text: text
         weird_event.get_group_id = MagicMock(side_effect=RuntimeError("adapter not supported"))
         results = [r async for r in plugin.cmd_code(weird_event)]
-        assert "请勿在群聊执行" not in results[0]
+        assert "请勿在群聊执行" in results[0]
 
         # 私聊（get_group_id 返回空）照常执行：不出现拒绝文案
         private_event = _chat_event(group_id="")
@@ -409,13 +435,13 @@ async def test_auto_relogin_requires_shared_secret():
     """(P2-9b) 自动重登需密码+shared_secret 齐备；只有密码时跳过并记录明确提示，手动路径不受影响。"""
     cfg = {
         "access_token": _make_jwt(-60),  # 已过期
-        "refresh_token": "rt_dead",
+        "refresh_token": _make_jwt(-60),
         "account_name": "user",
         "password": "pw",
         "enable_auto_relogin": True,
     }
     manager, auth, cfg = _make_auth_manager(cfg)
-    auth.refresh_tokens = AsyncMock(side_effect=SteamLoginError("rt dead"))
+    auth.refresh_tokens = AsyncMock(side_effect=SteamLoginError("rt dead", eresult=27))
     auth.login_with_password = AsyncMock(
         return_value={
             "access_token": _make_jwt(24 * 3600),
@@ -432,7 +458,7 @@ async def test_auto_relogin_requires_shared_secret():
 
     # 补上 shared_secret：同一情形下自动重登链路正常生效
     cfg["shared_secret"] = "cWFhYmJjY2RkZA=="
-    auth.refresh_tokens = AsyncMock(side_effect=SteamLoginError("rt dead"))
+    auth.refresh_tokens = AsyncMock(side_effect=SteamLoginError("rt dead", eresult=27))
     ok2 = await manager.ensure_valid_access_token()
     assert ok2 is True
     auth.login_with_password.assert_awaited_once()

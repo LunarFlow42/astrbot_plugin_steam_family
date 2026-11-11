@@ -7,16 +7,16 @@
     "default": ""
   },
   "cookie": {
-    "description": "Steam Cookie (全自动永久保活可选)",
+    "description": "Steam Cookie (可选会话复用)",
     "type": "string",
-    "hint": "【方式2·永久免维护】填入 steamLoginSecure 或完整 Cookie，插件将在 Token 过期时全自动静默刷新，永久保活！",
+    "hint": "填入 steamLoginSecure 或完整 Cookie，可在 Cookie 有效期间刷新 Access Token。不保证永久有效或不会触发 Steam 安全检查。",
     "obvious_hint": true,
     "default": ""
   },
   "account_name": {
     "description": "Steam 账号名 (路线一·2FA秘钥全自动重登)",
     "type": "string",
-    "hint": "【最稳保活·路线一】填写 Steam 登录账号名，搭配下方密码与 shared_secret，插件可在 Token 彻底失效时像 ASF 一样全自动重新登录，100% 永不掉线",
+    "hint": "与密码、shared_secret 搭配用于手动登录。自动密码重登默认关闭，需要显式开启；新设备/异地登录可能触发 Steam 安全限制。",
     "default": ""
   },
   "password": {
@@ -34,14 +34,20 @@
   "refresh_token": {
     "description": "Steam Refresh Token (扫码后自动保存，勿动)",
     "type": "string",
-    "hint": "200 天长效凭据。可用 /steam_qr 扫码登录自动获取；插件会每日滚动续期并自动回写此字段（寿命重置为 200 天），无需手动维护",
+    "hint": "通过 /steam_qr 登录后自动保存。优先复用已有授权，新令牌自动回写；实际有效期和是否可续期由 Steam 决定，不保证固定 200 天。",
     "default": ""
   },
   "enable_auto_relogin": {
     "description": "启用断线全自动重登 (路线一)",
     "type": "bool",
-    "hint": "开启后当 Refresh Token 彻底失效时，插件自动使用账号密码 + shared_secret 本地算码完成重登（ASF 同款永不掉线），无需人工干预",
-    "default": true
+    "hint": "默认关闭。仅在旧凭据确认失效后才尝试密码+shared_secret 重登；验证码被拒或需人工确认时暂停，限流至少退避 25 分钟，账号安全限制时停止认证。不能保证规避 Steam 风控。",
+    "default": false
+  },
+  "auth_device_name": {
+    "description": "固定认证设备名称",
+    "type": "string",
+    "hint": "留空使用宿主机名 + AstrBot Steam Family。保持名称和网络出口稳定，不伪造随机 Windows/手机型号。",
+    "default": ""
   },
   "steam_id": {
     "description": "绑定的 64 位 SteamID (17位纯数字)",
@@ -71,7 +77,7 @@
   "proxy": {
     "description": "网络代理地址",
     "type": "string",
-    "hint": "如 http://127.0.0.1:7890，若 Steam API 访问受阻可配置",
+    "hint": "如 http://127.0.0.1:7890。认证和数据请求统一使用此代理，不读取环境变量代理；请保持可信出口稳定，透明代理/TUN 仍由宿主网络决定。",
     "default": ""
   },
   "request_timeout": {

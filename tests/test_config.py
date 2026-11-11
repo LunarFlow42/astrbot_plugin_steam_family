@@ -8,6 +8,8 @@ def test_default_config():
     assert config.filter_non_games is True
     assert config.subscribers == []
     assert config.access_token == ""
+    assert config.enable_auto_relogin is False
+    assert config.auth_device_name == ""
 
 
 def test_custom_config():

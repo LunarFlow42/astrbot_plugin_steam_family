@@ -6,7 +6,6 @@
 商店接口 429 熔断指数退避（连续冷却递增与 2xx 复位）。
 """
 
-
 import sys
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -34,6 +33,13 @@ if "astrbot.api.event" not in sys.modules:
     mock_event_module = MagicMock()
 
     class MockFilter:
+        class PermissionType:
+            ADMIN = "admin"
+
+        @staticmethod
+        def permission_type(*args, **kwargs):
+            return lambda func: func
+
         @staticmethod
         def command(*args, **kwargs):
             def decorator(func):
@@ -226,7 +232,15 @@ async def test_no_price_change_no_event_but_refresh(tmp_path):
     await _seed_library(
         plugin,
         [600],
-        [{"appid": 600, "name": "Stable", "initial_price": 100.0, "final_price": 100.0, "discount_percent": 10}],
+        [
+            {
+                "appid": 600,
+                "name": "Stable",
+                "initial_price": 100.0,
+                "final_price": 100.0,
+                "discount_percent": 10,
+            }
+        ],
     )
     plugin.client.get_price_overview_batch = AsyncMock(return_value={600: (100.0, 100.0, 10)})
 
@@ -621,8 +635,9 @@ async def test_price_batch_429_escalates_and_breaker_blocks_requests():
     client = SteamFamilyClient()
     client._store_limiter.min_interval = 0.0
     clock = _FakeSteamClock()
-    with patch("core.steam_api.time", clock), patch.object(
-        client._client, "get", return_value=_steam_resp(429, {})
+    with (
+        patch("core.steam_api.time", clock),
+        patch.object(client._client, "get", return_value=_steam_resp(429, {})),
     ):
         with pytest.raises(SteamRateLimitError):
             await client.get_price_overview_batch([730])
