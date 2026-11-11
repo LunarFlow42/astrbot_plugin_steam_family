@@ -404,8 +404,8 @@ class SteamFamilyClient:
         for item in apps_data:
             appid = item.get("appid")
             name = item.get("name", "")
-            exclude_reason = int(item.get("excludeReason", 0))
-            app_type = int(item.get("appType", 1))
+            exclude_reason = int(item.get("exclude_reason") if item.get("exclude_reason") is not None else item.get("excludeReason", 0))
+            app_type = int(item.get("app_type") if item.get("app_type") is not None else item.get("appType", 1))
             owner_steamids = [
                 str(x)
                 for x in (item.get("owner_steamids") or item.get("ownerSteamids") or [])
@@ -431,13 +431,13 @@ class SteamFamilyClient:
                     continue
 
             try:
-                rt_time_acquired = int(item.get("rtTimeAcquired", 0))
+                rt_time_acquired = int(item.get("rt_time_acquired") if item.get("rt_time_acquired") is not None else item.get("rtTimeAcquired", 0))
             except (ValueError, TypeError):
                 rt_time_acquired = 0
 
-            rt_last_played = int(item.get("rtLastPlayed", 0))
-            rt_playtime = int(item.get("rtPlaytime", 0))
-            img_icon_hash = str(item.get("imgIconHash", ""))
+            rt_last_played = int(item.get("rt_last_played") if item.get("rt_last_played") is not None else item.get("rtLastPlayed", 0))
+            rt_playtime = int(item.get("rt_playtime") if item.get("rt_playtime") is not None else item.get("rtPlaytime", 0))
+            img_icon_hash = str(item.get("img_icon_hash") or item.get("imgIconHash", ""))
 
             shared_apps.append(
                 SharedApp(
