@@ -64,6 +64,7 @@ class SteamAgentTools:
         """
         rankings = await self.storage.get_family_rankings()
         snapshot = await self.storage.get_latest_snapshot()
+        profiles = await self.storage.get_member_profiles()
         total_games = len(snapshot) if snapshot else 0
         total_initial_val = sum(r["total_initial_price"] for r in rankings)
         total_current_val = sum(r["total_current_price"] for r in rankings)
@@ -76,8 +77,11 @@ class SteamAgentTools:
             "\n👑 【家庭义父贡献榜】:",
         ]
         for i, r in enumerate(rankings[:5], 1):
+            sid = str(r["steamid"])
+            p = profiles.get(sid)
+            name = p.get("persona_name") if p and p.get("persona_name") else f"成员 {sid[-4:]}"
             lines.append(
-                f"{i}. 成员 {r['steamid'][-4:]}****: 贡献 {r['game_count']} 款游戏 (原值 ¥{r['total_initial_price']:,.2f})"
+                f"{i}. {name}: 贡献 {r['game_count']} 款游戏 (原值 ¥{r['total_initial_price']:,.2f})"
             )
 
         return "\n".join(lines)
