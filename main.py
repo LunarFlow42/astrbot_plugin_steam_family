@@ -1474,14 +1474,55 @@ class SteamFamilyPlugin(Star):
     async def _notify_status_change_event(
         self, appid: int, name: str, payload: dict, ctx: _NotifyContext
     ) -> bool:
-        """播报"状态变化"事件（exclude_reason 变化时附退款/移出共享提示）。"""
+        """播报"状态/共享属性变化"事件（支持中文人类友好提示）。"""
         field = str(payload.get("field", ""))
-        old_val = payload.get("old", "?")
-        new_val = payload.get("new", "?")
-        note = ""
+        old_val = payload.get("old", 0)
+        new_val = payload.get("new", 0)
+
+        # 针对 exclude_reason（家庭共享属性）做专门的人类友好解读
         if field == "exclude_reason":
-            note = "（exclude_reason 变化通常意味着可能被退款/移出共享）"
-        text = f"⚠️ 《{name}》状态变化 {field}: {old_val} → {new_val}{note}"
+            reason_map = {
+                0: "支持家庭共享（正常在库）",
+                1: "号主设置为私密/仅自己可见",
+                2: "开发者不支持共享",
+                3: "发行商已退出家庭共享",
+                4: "区域限制不可共享",
+                5: "账号封禁或受限",
+                6: "免费周末/临时许可到期",
+                7: "需要第三方启动器（如 EA/育碧）不支持共享",
+                8: "原许可证失效或已退款",
+            }
+            old_desc = reason_map.get(int(old_val), f"受限({old_val})")
+            new_desc = reason_map.get(int(new_val), f"受限({new_val})")
+
+            if int(old_val) != 0 and int(new_val) == 0:
+                # 原来不可共享，现在新增/解锁了家庭共享！
+                text = (
+                    f"🎉 【Steam 共享属性解锁】《{name}》(AppID {appid})\n"
+                    f"✨ 发行商或号主已开放家庭共享权限，大家现在可以一起游玩了！\n"
+                    f"🔗 商店: https://store.steampowered.com/app/{appid}"
+                )
+            elif int(old_val) == 0 and int(new_val) != 0:
+                # 原来可以共享，现在被去除了家庭共享！
+                text = (
+                    f"🚫 【Steam 共享属性被去除】《{name}》(AppID {appid})\n"
+                    f"⚠️ 该游戏已被移出家庭共享库！\n"
+                    f"📌 原因: {new_desc}\n"
+                    f"🔗 商店: https://store.steampowered.com/app/{appid}"
+                )
+            else:
+                text = (
+                    f"⚠️ 【Steam 共享状态变更】《{name}》(AppID {appid})\n"
+                    f"变动: {old_desc} → {new_desc}"
+                )
+        elif field == "app_type":
+            type_map = {1: "游戏", 2: "软件", 4: "DLC", 8: "Demo", 16: "视频"}
+            old_desc = type_map.get(int(old_val), str(old_val))
+            new_desc = type_map.get(int(new_val), str(new_val))
+            text = f"ℹ️ 《{name}》类型变更: {old_desc} → {new_desc}"
+        else:
+            text = f"⚠️ 《{name}》状态变化 {field}: {old_val} → {new_val}"
+
         await self._send_text_to_subscribers(text, ctx)
         return "done"
 

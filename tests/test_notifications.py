@@ -256,7 +256,7 @@ async def test_owner_change_and_status_change_dispatch(tmp_path):
         "🔁 《Elden Ring》归属变动：新增义父 甲、乙 / 失去义父 丙" in t for t in texts
     )
     assert any(
-        "⚠️ 《Elden Ring》状态变化 exclude_reason: 0 → 2" in t and "可能被退款/移出共享" in t
+        "【Steam 共享属性被去除】《Elden Ring》" in t and "该游戏已被移出家庭共享库" in t
         for t in texts
     )
     assert await plugin.storage.pending_count() == 0
