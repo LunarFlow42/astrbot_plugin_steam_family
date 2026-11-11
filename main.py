@@ -455,6 +455,27 @@ class SteamFamilyPlugin(Star):
 
     async def web_api_remove_app(self, *args, **kwargs):
         appid = 0
+
+        # 优先从 AstrBot 官方上下文代理 request 读取（异步/同步 JSON 及 query 均支持）
+        if hasattr(request, "json"):
+            try:
+                req_json = request.json()
+                if asyncio.iscoroutine(req_json):
+                    req_json = await req_json
+                if isinstance(req_json, dict) and "appid" in req_json:
+                    val = req_json["appid"]
+                    if str(val).isdigit() or isinstance(val, int):
+                        appid = int(val)
+            except Exception:
+                pass
+        if appid == 0 and hasattr(request, "query"):
+            try:
+                val = request.query.get("appid", 0) if hasattr(request.query, "get") else 0
+                if str(val).isdigit():
+                    appid = int(val)
+            except Exception:
+                pass
+
         for arg in args:
             if hasattr(arg, "json"):
                 try:
@@ -483,9 +504,6 @@ class SteamFamilyPlugin(Star):
         if appid == 0 and "appid" in kwargs:
             val = kwargs["appid"]
             appid = int(val) if str(val).isdigit() else 0
-        if appid == 0 and hasattr(request, "query") and isinstance(request.query, dict):
-            appid_str = request.query.get("appid", "0")
-            appid = int(appid_str) if str(appid_str).isdigit() else 0
 
         if not appid:
             return make_cors_response(

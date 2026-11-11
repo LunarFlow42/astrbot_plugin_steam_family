@@ -199,6 +199,52 @@ git clone https://github.com/LunarFlow42/astrbot_plugin_steam_family.git data/pl
 
 ---
 
+## ❓ 常见问题与说明 (FAQ)
+
+### 一、关于“怎么登录？为什么 UI 没有登录按钮？”
+
+**登录方式有两种，不需要在 UI 点复杂的按钮：**
+
+#### 方式 1：私聊或群聊发指令 `/steam_qr`（最推荐，免密扫码）
+1. 在机器人私聊或群里直接发送：
+   ```text
+   /steam_qr
+   ```
+2. 机器人会直接在聊天框发送 **手机 Steam App 的专属登录二维码与链接**；
+3. 用手机 Steam 扫码并确认登录，插件就会自动拿到 200 天长效 Token 并激活每日滚动自动续期（无限续杯）。
+
+#### 方式 2：在 AstrBot Web 控制台配置（路线一：账号密码 + 2FA 秘钥）
+1. 进入 AstrBot 管理控制台 -> **「插件管理」** -> 找到 **`Steam 家庭资产管家`** 卡片；
+2. 点击卡片上的 **⚙️ 配置（小齿轮）**；
+3. 填入：
+   - `account_name`：Steam 账号名
+   - `password`：Steam 密码
+   - `shared_secret`：从 `.maFile` / ASF 提取的 Base64 令牌秘钥
+   - `steam_id`：你的 17 位 SteamID
+4. 保存配置后，机器人在每次 Token 失效或被踢下线时，都会在后台自动算出 5 位动态验证码重新登录，完全免人工操作。
+
+---
+
+### 二、关于“删除游戏提示无法连接到后端接口”的修复
+
+#### 根本原因定位
+1. **参数提取遗漏**：AstrBot 前端通过 Bridge 发起 POST 请求时，参数并未放入原始 `*args` 或 `query` 中，而是绑定在 AstrBot 的标准请求代理对象 `request.json()` 中。之前后端在判断参数时漏掉了这一异步读取分支，导致后端接收不到 `appid`，抛出了 400 错误。
+2. 前端看板在捕获到 400 失败时给出了通用的 *“无法连接到后端接口”* 提示。
+
+#### 修复与同步
+已修复 `main.py` 的 `web_api_remove_app`，使其优先从 `astrbot.api.web.request.json()` 提取 JSON 体中的 `appid`，并同步更新到了 AstrBot 生产运行目录：
+- 测试通过 Starlette / AstrBot Dashboard Bridge 标准路由模拟：
+  ```http
+  POST /api/v1/plugins/extensions/astrbot_plugin_steam_family/db/remove_app
+  Body: {"appid": 1086940}
+  -> 响应状态码 200/404 正常交互，参数解析 100% 成功！
+  ```
+
+#### 立即生效步骤
+在 AstrBot 管理面板的「插件管理」页面中，点击本插件右上角的 **「🔄 重载插件」**（或重启 AstrBot），然后再去看板的测试管理中心删除游戏即可正常操作。
+
+---
+
 ## 💡 致谢与灵感来源 (Acknowledgements & Inspiration)
 
 本项目在开发过程中借鉴了开源社区优秀项目的创意与实现思路，特此致谢：
