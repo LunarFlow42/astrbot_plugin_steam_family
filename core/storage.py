@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,12 @@ class FamilyStorage:
     def __init__(self, db_path: str = "data/steam_family.db"):
         self.db_path = db_path
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        # 数据目录权限收紧：库内存有凭据 KV / 浏览记录等敏感数据（POSIX 语义，
+        # Windows 上 chmod 无性别语义、失败静默忽略），配合 init_db 的 0o600 文件权限
+        try:
+            Path(self.db_path).parent.chmod(0o700)
+        except OSError:
+            pass
 
     def _get_conn(self):
         return aiosqlite.connect(self.db_path)
@@ -77,7 +84,47 @@ class FamilyStorage:
                     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS credentials_kv (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS pending_notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    kind TEXT NOT NULL,            -- 'added' | 'removed' | 'owner_change' | 'price_drop'
+                    dedupe_key TEXT NOT NULL UNIQUE,
+                    payload_json TEXT NOT NULL,
+                    retries INTEGER NOT NULL DEFAULT 0,
+                    next_attempt_at REAL NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS push_failures (
+                    target_id TEXT PRIMARY KEY,
+                    fail_count INTEGER NOT NULL DEFAULT 0,
+                    last_fail_at REAL
+                );
+            """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS playtime_stats (
+                    steamid TEXT NOT NULL,
+                    appid INTEGER NOT NULL,
+                    seconds_played REAL NOT NULL DEFAULT 0,
+                    rt_last_played INTEGER NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (steamid, appid)
+                );
+            """)
             await db.commit()
+        # 库文件权限收紧（首次连接后文件必定存在）：仅属主可读写，防同机其他用户/备份误收集凭据
+        try:
+            Path(self.db_path).chmod(0o600)
+        except OSError:
+            pass
 
     async def subscribe(self, target_id: str):
         """订阅变动推送。"""
@@ -104,7 +151,12 @@ class FamilyStorage:
             return [r[0] for r in rows]
 
     async def save_snapshot(self, apps: list[SharedApp]) -> int:
-        """保存全量家庭库快照并同步所有权映射。"""
+        """保存全量家庭库快照并整表重建所有权映射。
+
+        app_ownership 在同一事务内先全量 DELETE 再插入本次快照列表，
+        确保游戏被移出家庭库后旧映射随之消失（义父榜/资产总值不虚高）。
+        家庭库规模小，整表重建的开销可忽略。
+        """
         data = [app.model_dump() for app in apps]
         raw_json = json.dumps(data, ensure_ascii=False)
         async with self._get_conn() as db:
@@ -114,13 +166,15 @@ class FamilyStorage:
             )
             snapshot_id = cursor.lastrowid
 
-            # Sync app ownership
-            for app in apps:
-                for owner in app.owner_steamids:
-                    await db.execute(
-                        "INSERT OR IGNORE INTO app_ownership (appid, owner_steamid) VALUES (?, ?)",
-                        (app.appid, str(owner)),
-                    )
+            # 单事务内整表重建所有权映射：先清空全部旧映射，再插入本次列表
+            # （此前仅 INSERT OR IGNORE 从不删除，会导致移出家庭库的游戏残留映射）
+            await db.execute("DELETE FROM app_ownership")
+            rows = [(app.appid, str(owner)) for app in apps for owner in app.owner_steamids]
+            if rows:
+                await db.executemany(
+                    "INSERT OR IGNORE INTO app_ownership (appid, owner_steamid) VALUES (?, ?)",
+                    rows,
+                )
             await db.commit()
             return snapshot_id or 0
 
@@ -229,51 +283,75 @@ class FamilyStorage:
             )
             await db.commit()
 
+    # apps_cache 的显式列清单（防御未来加列导致 SELECT * 行位移错位）
+    _APPS_CACHE_COLUMNS = (
+        "appid, name, chinese_name, header_image, is_free, "
+        "initial_price, final_price, discount_percent, "
+        "genres, categories, positive_rate, review_summary"
+    )
+
+    @classmethod
+    def _row_to_app_details(cls, row: tuple) -> AppDetails:
+        """把 apps_cache 的行元组转为 AppDetails（列顺序见 _APPS_CACHE_COLUMNS）。"""
+        return AppDetails(
+            appid=row[0],
+            name=row[1],
+            chinese_name=row[2],
+            header_image=row[3],
+            is_free=bool(row[4]),
+            initial_price=row[5],
+            final_price=row[6],
+            discount_percent=row[7],
+            genres=json.loads(row[8]) if row[8] else [],
+            categories=json.loads(row[9]) if row[9] else [],
+            positive_rate=row[10],
+            review_summary=row[11],
+        )
+
     async def get_cached_app(self, appid: int) -> AppDetails | None:
         """从缓存中获取单个游戏详情。"""
         async with (
             self._get_conn() as db,
-            db.execute("SELECT * FROM apps_cache WHERE appid = ?", (appid,)) as cursor,
+            db.execute(
+                f"SELECT {self._APPS_CACHE_COLUMNS} FROM apps_cache WHERE appid = ?", (appid,)
+            ) as cursor,
         ):
             row = await cursor.fetchone()
             if not row:
                 return None
-            return AppDetails(
-                appid=row[0],
-                name=row[1],
-                chinese_name=row[2],
-                header_image=row[3],
-                is_free=bool(row[4]),
-                initial_price=row[5],
-                final_price=row[6],
-                discount_percent=row[7],
-                genres=json.loads(row[8]) if row[8] else [],
-                categories=json.loads(row[9]) if row[9] else [],
-                positive_rate=row[10],
-                review_summary=row[11],
-            )
+            return self._row_to_app_details(row)
 
     async def get_all_cached_apps(self) -> list[AppDetails]:
         """获取所有已缓存的游戏详情。"""
-        async with self._get_conn() as db, db.execute("SELECT * FROM apps_cache") as cursor:
+        async with (
+            self._get_conn() as db,
+            db.execute(f"SELECT {self._APPS_CACHE_COLUMNS} FROM apps_cache") as cursor,
+        ):
             rows = await cursor.fetchall()
-            return [
-                AppDetails(
-                    appid=row[0],
-                    name=row[1],
-                    chinese_name=row[2],
-                    header_image=row[3],
-                    is_free=bool(row[4]),
-                    initial_price=row[5],
-                    final_price=row[6],
-                    discount_percent=row[7],
-                    genres=json.loads(row[8]) if row[8] else [],
-                    categories=json.loads(row[9]) if row[9] else [],
-                    positive_rate=row[10],
-                    review_summary=row[11],
-                )
-                for row in rows
-            ]
+            return [self._row_to_app_details(row) for row in rows]
+
+    async def update_prices(
+        self, appid: int, initial_price: float, final_price: float, discount_percent: int
+    ) -> bool:
+        """更新 apps_cache 中指定游戏的最新价格（三字段），仅对已缓存过的游戏生效。
+
+        Returns:
+            bool: apps_cache 中存在该 appid 且更新成功返回 True；
+            从未缓存过的游戏（无匹配行）直接返回 False，调用方据此跳过。
+        """
+        async with self._get_conn() as db:
+            cur = await db.execute(
+                """
+                UPDATE apps_cache
+                SET initial_price = ?, final_price = ?, discount_percent = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE appid = ?
+                """,
+                (float(initial_price), float(final_price), int(discount_percent), int(appid)),
+            )
+            await db.commit()
+            return bool(cur.rowcount)
+
 
     async def save_member_profiles(self, profiles: dict[str, dict[str, Any]]):
         """保存或更新家庭成员资料（真实昵称与头像）。"""
@@ -498,3 +576,414 @@ class FamilyStorage:
             "top_genres": [{"genre": g[0], "count": g[1]} for g in top_genres],
             "price_stats": price_counter,
         }
+
+    # ------------------------------------------------------------------
+    # 凭据 KV 持久化 (滚动续期 Token 的二级保险，防止配置保存失败时丢失)
+    # ------------------------------------------------------------------
+    async def set_kv(self, key: str, value: str):
+        """持久化一条凭据键值（如滚动续期后的 refresh_token）。"""
+        if key is None or value is None:
+            return
+        async with self._get_conn() as db:
+            await db.execute(
+                """
+                INSERT INTO credentials_kv (key, value, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (str(key), str(value)),
+            )
+            await db.commit()
+
+    async def get_kv(self, key: str) -> str | None:
+        """读取一条凭据键值。"""
+        async with (
+            self._get_conn() as db,
+            db.execute("SELECT value FROM credentials_kv WHERE key = ?", (key,)) as cursor,
+        ):
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+    async def get_kv_all(self) -> dict[str, str]:
+        """读取全部凭据键值。"""
+        async with (
+            self._get_conn() as db,
+            db.execute("SELECT key, value FROM credentials_kv") as cursor,
+        ):
+            rows = await cursor.fetchall()
+            return {str(r[0]): str(r[1]) for r in rows}
+
+    async def delete_kv(self, key: str):
+        async with self._get_conn() as db:
+            await db.execute("DELETE FROM credentials_kv WHERE key = ?", (key,))
+            await db.commit()
+
+    # ------------------------------------------------------------------
+    # 待推送通知队列（快照先落库、通知后推送：失败重试、指数退避、防丢失）
+    # ------------------------------------------------------------------
+    async def enqueue_pending(self, kind: str, payload: dict, dedupe_key: str) -> None:
+        """入队一条待推送通知。
+
+        同一 dedupe_key 重复入队时：更新 payload_json 并将 next_attempt_at 归零
+        （允许立即重试），但保留原 retries 计数。
+        """
+        async with self._get_conn() as db:
+            await db.execute(
+                """
+                INSERT INTO pending_notifications (kind, dedupe_key, payload_json, next_attempt_at)
+                VALUES (?, ?, ?, 0)
+                ON CONFLICT(dedupe_key) DO UPDATE SET
+                    payload_json = excluded.payload_json,
+                    next_attempt_at = 0
+                """,
+                (kind, dedupe_key, json.dumps(payload, ensure_ascii=False)),
+            )
+            await db.commit()
+
+    async def claim_due_pending(self, limit: int = 20) -> list[dict]:
+        """领取当前到期（next_attempt_at <= now）的待推送通知，按 id 升序。
+
+        逐行 json.loads 并做毒丸防护：payload_json 损坏的行不会让整批领取炸掉，
+        而是按重试退避处理（retries+1；超过上限删除并记录 error 日志），
+        其余健康行正常返回。
+
+        并发与可靠性语义（务必了解的前提）：
+          - 领取动作只是一条 SELECT 查询，**不会**对行加任何租约/占用标记。
+            并发安全的前提是单实例部署 + 调用方用 asyncio 锁串行化
+            "claim → 推送 → mark_pending_done" 全程；多实例共享同一 DB 时
+            会重复领取同一行，属于不安全用法。
+          - at-least-once 语义：若进程在 claim 之后、mark_pending_done 之前
+            崩溃，该行仍留在队列中，重启后会被再次领取并重发一次
+            （至多重发、不丢消息；调用方应保证通知内容可安全重复展示）。
+        """
+        async with (
+            self._get_conn() as db,
+            db.execute(
+                "SELECT id, kind, dedupe_key, payload_json, retries FROM pending_notifications "
+                "WHERE next_attempt_at <= ? ORDER BY id LIMIT ?",
+                (time.time(), limit),
+            ) as cursor,
+        ):
+            rows = await cursor.fetchall()
+        claimed: list[dict] = []
+        poisoned_ids: list[int] = []
+        for row in rows:
+            try:
+                payload = json.loads(row[3])
+            except (TypeError, ValueError):
+                # 毒丸行：单独退避，不阻断本批其余健康行
+                poisoned_ids.append(row[0])
+                logger.warning(
+                    "pending_notifications payload_json 解析失败，已退避重试: "
+                    "id=%s dedupe_key=%s retries=%s",
+                    row[0],
+                    row[2],
+                    row[4],
+                )
+                continue
+            claimed.append({"id": row[0], "kind": row[1], "payload": payload, "retries": row[4]})
+        for pid in poisoned_ids:
+            # 复用退避逻辑：retries+1，超上限由 bump_pending_retry 删除并记录 error 日志
+            await self.bump_pending_retry(pid)
+        return claimed
+
+    async def mark_pending_done(self, id: int) -> None:
+        """标记通知推送成功完成（直接删除队列行）。"""
+        async with self._get_conn() as db:
+            await db.execute("DELETE FROM pending_notifications WHERE id = ?", (id,))
+            await db.commit()
+
+    async def bump_pending_retry(self, id: int, max_retries: int = 5) -> bool:
+        """推送失败后的重试退避处理。
+
+        retries 自增 1；若达到上限（max_retries）则删除该行并返回 False；
+        删除前记录 error 日志（kind / dedupe_key / payload_json 截断 200 字），
+        便于排查彻底推不出去的通知。
+        否则设置指数退避 next_attempt_at = now + min(300 * 2**retries, 3600)
+        （retries 为自增后的新值，退避最长 1 小时）并返回 True。
+        """
+        async with self._get_conn() as db:
+            async with db.execute(
+                "SELECT retries, kind, dedupe_key, payload_json FROM pending_notifications "
+                "WHERE id = ?",
+                (id,),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                return False
+            new_retries = int(row[0]) + 1
+            if new_retries >= max_retries:
+                logger.error(
+                    "待推送通知重试达上限被丢弃: kind=%s dedupe_key=%s payload=%.200s",
+                    row[1],
+                    row[2],
+                    row[3] or "",
+                )
+                await db.execute("DELETE FROM pending_notifications WHERE id = ?", (id,))
+                await db.commit()
+                return False
+            delay = min(300 * (2**new_retries), 3600)
+            await db.execute(
+                "UPDATE pending_notifications SET retries = ?, next_attempt_at = ? WHERE id = ?",
+                (new_retries, time.time() + delay, id),
+            )
+            await db.commit()
+            return True
+
+    async def pending_count(self) -> int:
+        """当前待推送通知队列长度。"""
+        async with (
+            self._get_conn() as db,
+            db.execute("SELECT COUNT(*) FROM pending_notifications") as cursor,
+        ):
+            row = await cursor.fetchone()
+            return int(row[0]) if row else 0
+
+    # ------------------------------------------------------------------
+    # 快照修剪（防止 library_snapshots 无限膨胀，且最新基线永不丢失）
+    # ------------------------------------------------------------------
+    async def prune_snapshots(self, keep_min: int = 200, keep_days: int = 30) -> int:
+        """修剪历史快照，返回被删除的行数。
+
+        最新的 keep_min 条永远保留；更早的行中，创建时间超过 keep_days 天的才会被删除。
+        """
+        async with self._get_conn() as db:
+            async with db.execute(
+                "SELECT MIN(id) FROM (SELECT id FROM library_snapshots ORDER BY id DESC LIMIT ?)",
+                (keep_min,),
+            ) as cursor:
+                row = await cursor.fetchone()
+            boundary_id = row[0] if row else None
+            if boundary_id is None:
+                if keep_min > 0:
+                    return 0  # 表为空
+                boundary_id = 0  # keep_min<=0：不保留最新若干条，全部按时间规则修剪
+            cutoff_seconds = int(time.time() - keep_days * 86400)
+            # created_at 由 CURRENT_TIMESTAMP 写入（UTC 文本），用 datetime(?, 'unixepoch')
+            # 统一转为同格式文本再做文本比较，避免 REAL 与 TEXT 跨类型比较永远为假的坑。
+            cur = await db.execute(
+                "DELETE FROM library_snapshots "
+                "WHERE id < ? AND created_at < datetime(?, 'unixepoch')",
+                (boundary_id, cutoff_seconds),
+            )
+            deleted = cur.rowcount or 0
+            await db.commit()
+            return int(deleted)
+
+    # ------------------------------------------------------------------
+    # 同步状态观测（基于通用 kv 表 credentials_kv 的薄封装）
+    # 常用键：sync_last_success_ts / sync_last_duration_ms / sync_last_message
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _sync_state_key(key: str) -> str:
+        """归一化同步状态键（允许调用方省略 sync_ 前缀）。"""
+        key = str(key)
+        return key if key.startswith("sync_") else f"sync_{key}"
+
+    async def set_sync_state(self, key: str, value: str) -> None:
+        """写入一条同步状态键值（键名由调用方给出，如 sync_last_success_ts）。"""
+        await self.set_kv(self._sync_state_key(key), str(value))
+
+    async def get_sync_state(self, key: str) -> str | None:
+        """读取一条同步状态键值。"""
+        return await self.get_kv(self._sync_state_key(key))
+
+    async def get_sync_state_info(self) -> dict[str, Any]:
+        """汇总最近一次同步的观测信息（键缺失/非法时返回缺省值）。"""
+        last_ts_raw = await self.get_sync_state("last_success_ts")
+        last_dur_raw = await self.get_sync_state("last_duration_ms")
+        try:
+            last_success_ts = float(last_ts_raw) if last_ts_raw is not None else 0.0
+        except (TypeError, ValueError):
+            last_success_ts = 0.0
+        try:
+            last_duration_ms = int(float(last_dur_raw)) if last_dur_raw is not None else 0
+        except (TypeError, ValueError):
+            last_duration_ms = 0
+        if last_success_ts > 0:
+            last_success_ago_minutes = max(0.0, (time.time() - last_success_ts) / 60.0)
+        else:
+            last_success_ago_minutes = 0.0
+        return {
+            "last_success_ts": last_success_ts,
+            "last_duration_ms": last_duration_ms,
+            "last_success_ago_minutes": last_success_ago_minutes,
+        }
+
+    # ------------------------------------------------------------------
+    # 推送失败计数（用于自动清理失效订阅者）
+    # ------------------------------------------------------------------
+    async def record_push_failure(self, target_id: str) -> int:
+        """记录一次推送到 target_id 的失败并累加计数，返回累计失败次数。"""
+        async with self._get_conn() as db:
+            await db.execute(
+                """
+                INSERT INTO push_failures (target_id, fail_count, last_fail_at)
+                VALUES (?, 1, ?)
+                ON CONFLICT(target_id) DO UPDATE SET
+                    fail_count = fail_count + 1,
+                    last_fail_at = excluded.last_fail_at
+                """,
+                (target_id, time.time()),
+            )
+            await db.commit()
+            async with db.execute(
+                "SELECT fail_count FROM push_failures WHERE target_id = ?", (target_id,)
+            ) as cursor:
+                row = await cursor.fetchone()
+        return int(row[0]) if row else 0
+
+    async def reset_push_failures(self, target_id: str) -> None:
+        """重置（清除）某目标的推送失败计数（推送恢复成功后调用）。"""
+        async with self._get_conn() as db:
+            await db.execute("DELETE FROM push_failures WHERE target_id = ?", (target_id,))
+            await db.commit()
+
+    async def prune_dead_subscribers(
+        self, max_failures: int = 5, failure_window_hours: int = 24
+    ) -> list[str]:
+        """移除推送持续失败的失效订阅者。
+
+        仅当 fail_count >= max_failures 且 last_fail_at 位于最近
+        failure_window_hours 小时内才删除（stale 失败可能是目标已恢复但一直没触发
+        重发，不应误删）。last_fail_at 为空的行同样保守跳过。
+        同时删除 subscriptions 表中的订阅与 push_failures 表中的计数，
+        返回被移除的 target_id 列表。
+        """
+        window_seconds = max(0, int(failure_window_hours)) * 3600
+        cutoff = time.time() - window_seconds
+        async with self._get_conn() as db:
+            async with db.execute(
+                "SELECT target_id FROM push_failures "
+                "WHERE fail_count >= ? AND last_fail_at IS NOT NULL AND last_fail_at >= ?",
+                (max_failures, cutoff),
+            ) as cursor:
+                rows = await cursor.fetchall()
+            dead_ids = [r[0] for r in rows]
+            if not dead_ids:
+                return []
+            placeholders = ",".join("?" * len(dead_ids))
+            await db.execute(
+                f"DELETE FROM subscriptions WHERE target_id IN ({placeholders})",
+                (*dead_ids,),
+            )
+            await db.execute(
+                f"DELETE FROM push_failures WHERE target_id IN ({placeholders})",
+                (*dead_ids,),
+            )
+            await db.commit()
+            return dead_ids
+
+    # ------------------------------------------------------------------
+    # 游玩时长统计（数据源：IFamilyGroupsService/GetPlaytimeSummary 的 response.entries）
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _normalize_entry_keys(entry: dict) -> dict[str, Any]:
+        """将 Steam 返回的 entry 键归一化（去下划线并转小写），容忍大小写/命名混用。"""
+        return {str(k).replace("_", "").lower(): v for k, v in entry.items()}
+
+    async def refresh_playtime_stats(self, entries: list[dict]) -> int:
+        """批量刷新游玩时长统计（单事务 upsert），返回写入条数。
+
+        entries 来自 IFamilyGroupsService/GetPlaytimeSummary 的 response.entries，
+        真实字段形状（camelCase，时长单位已是秒、时间为 Unix 时间戳）：
+            {"steamid": str, "appid": int,
+             "firstPlayed": int, "latestPlayed": int, "secondsPlayed": int}
+
+        键归一化兼容大小写/下划线混用（latestPlayed / latest_played / rt_last_played
+        / LastPlayed 等），rt_last_played 列依次取 latestPlayed → rt_last_played →
+        firstPlayed（缺前者时的兜底）；seconds_played 直接入库为秒，不做任何换算。
+
+        注意：历史实现误假设"Steam 返回 rt_playtime 单位为分钟，需 ×60 换算成秒"，
+        但该接口并不存在 rt_playtime 字段——真实字段 secondsPlayed 的单位已是秒，
+        ×60 会把真实数据虚增 60 倍，故该换算分支已删除。
+        """
+        if not entries:
+            return 0
+        rows: list[tuple[str, int, float, int]] = []
+        for entry in entries:
+            if not entry:
+                continue
+            norm = self._normalize_entry_keys(entry)
+            steamid = norm.get("steamid")
+            raw_appid = norm.get("appid")
+            if not steamid or raw_appid is None:
+                continue
+            try:
+                appid = int(raw_appid)
+            except (TypeError, ValueError):
+                continue
+            # secondsPlayed 直接入库为秒（真实字段单位已是秒）
+            seconds_played = 0.0
+            if norm.get("secondsplayed") is not None:
+                try:
+                    seconds_played = float(norm["secondsplayed"])
+                except (TypeError, ValueError):
+                    seconds_played = 0.0
+            # 最后游玩时间：latestPlayed 优先，兼容旧字段 rt_last_played，firstPlayed 兜底
+            rt_last_played = 0
+            for key in ("latestplayed", "rtlastplayed", "lastplayed", "firstplayed"):
+                if norm.get(key) is not None:
+                    try:
+                        rt_last_played = int(norm[key])
+                        break
+                    except (TypeError, ValueError):
+                        continue
+            rows.append((str(steamid), appid, seconds_played, rt_last_played))
+        if not rows:
+            return 0
+        async with self._get_conn() as db:
+            await db.executemany(
+                """
+                INSERT INTO playtime_stats (steamid, appid, seconds_played, rt_last_played, updated_at)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(steamid, appid) DO UPDATE SET
+                    seconds_played = excluded.seconds_played,
+                    rt_last_played = excluded.rt_last_played,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                rows,
+            )
+            await db.commit()
+        return len(rows)
+
+    async def get_recent_plays(self, limit: int = 10) -> list[dict]:
+        """获取最近游玩记录（按最后游玩时间倒序），联表成员资料与游戏详情缓存。"""
+        async with (
+            self._get_conn() as db,
+            db.execute(
+                """
+                SELECT
+                    p.steamid,
+                    p.appid,
+                    p.seconds_played,
+                    p.rt_last_played,
+                    COALESCE(NULLIF(a.chinese_name, ''), a.name) AS game_name,
+                    a.header_image,
+                    m.persona_name,
+                    m.avatar_url
+                FROM playtime_stats p
+                LEFT JOIN member_profiles m ON p.steamid = m.steamid
+                LEFT JOIN apps_cache a ON p.appid = a.appid
+                ORDER BY p.rt_last_played DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ) as cursor,
+        ):
+            rows = await cursor.fetchall()
+        return [
+            {
+                "steamid": r[0],
+                "appid": r[1],
+                "game_name": r[4] or f"App {r[1]}",
+                "persona_name": r[6] or "",
+                "avatar_url": r[7] or "",
+                "seconds_played": r[2],
+                "rt_last_played": r[3],
+                "header_image": r[5] or "",
+            }
+            for r in rows
+        ]

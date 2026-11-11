@@ -27,7 +27,7 @@
 - 🚀 **开黑车队雷达**：一键计算指定多位开黑成员共同拥有的多人合作游戏交集，聚会开黑不撞车。
 - 🖥️ **AstrBot 原生内置 WebUI（Plugin Pages）**：无需额外手动开启或放行任何端口！直接在 AstrBot 管理面板点击插件卡片上的 **「🖥️ 打开插件UI界面」** 图标，即可一键呼出全景大盘与可视化数据库测试中心。
 - 🤖 **原生 AI Agent 工具调用（LLM Function Calling）**：支持群友使用自然语言与机器人聊天找游戏（*“帮我找个 50 块以下画风治愈的解谜游戏”*）。
-- 🛡️ **双模鉴权与自动永久保活**：支持直达链接获取 Token，亦可填入 Cookie 由插件在后台自动静默刷新 Token，永久免维护。
+- 🛡️ **"永不掉线" 全自动保活**：支持 `/steam_qr` 扫码登录（200 天令牌 + `renewal_type=1` 每日滚动续期无限续杯），进阶可填入账号密码 + `shared_secret`（2FA 秘钥）实现断线后本地算码全自动重登（ASF 同款，100% 永不掉线），另有 Cookie 静默刷新兜底。
 
 ---
 
@@ -73,6 +73,60 @@ git clone https://github.com/LunarFlow42/astrbot_plugin_steam_family.git data/pl
 ```
 > 📌 **操作**：直接复制 `"webapi_token"` 冒号后面的那串以 **`ey`** 开头的长字符串即可！无需开控制台，点开就能直接复制。
 
+### 3. 更简单的方式：手机扫一次码（任选）
+不想折腾 Token？直接在聊天里发送 **`/steam_qr`**，用手机 Steam App 扫一下二维码并确认，插件即可拿到与手机 App 完全同级、200 天寿命的 `refresh_token` + `access_token`，并**自动开启每日滚动续期**。从此无需再手动更新任何 Token！
+
+---
+
+## 🛡️ "永不掉线" 全自动保活体系（v0.2.0 新增）
+
+手机 Steam App 可以几年不掉线，靠的是 **滚动续期（Rolling Renewal）** 与 **本地 2FA 秘钥（`shared_secret`）**。本插件完整复刻了这两条机制，双路线保活：
+
+| 路线 | 需要准备 | 保活效果 | 什么情况会掉线 |
+|---|---|---|---|
+| **路线一：2FA 秘钥全自动重登**（ASF 同款） | Steam 账号名 + 密码 + `shared_secret` | **100% 永不掉线** | 只有你主动改 Steam 密码 / 解绑手机令牌 |
+| **路线二：扫码 + 滚动续期**（无限续杯） | 手机扫一次码（`/steam_qr`） | **准永久**（每天运行即无限顺延 200 天） | 插件停机超半年，或在手机端"注销所有其他设备" |
+
+### 路线二：伪装手机 App 扫码 + `renewal_type=1` 滚动续期（默认推荐）
+- 扫码会话以 `k_EAuthTokenPlatformType_MobileApp`（手机端）发起，令牌 audience 为 `['web','mobile']`，比网页端更抗风控；
+- 插件每次登录前都会用缓存的 `refresh_token` 调用 `GenerateAccessTokenForApp` 兑换新 Access Token，并携带 **`renewal_type=1`**：一旦 Steam 判定当前 200 天令牌剩余寿命需要顺延，会直接在返回体中夹带一条**寿命重置为 200 天的全新 `refresh_token`**，插件立即持久化保存，实现"无限续杯"；
+- 新令牌会自动回写 AstrBot 配置 + 插件 SQLite KV 双备份，重启后依然有效。
+
+### 路线一：账号密码 + `shared_secret` 全自动重登（100% 永生兜底）
+当 `refresh_token` 彻底失效（200 天到期 / Steam 抽风强制踢下线）时，插件自动执行 ASF 同款流程：
+1. 调用 `IAuthenticationService/GetPasswordRSAPublicKey/v1` 获取 RSA 公钥，**本地** PKCS#1 v1.5 加密密码（纯 Python 实现，密码不出明文）；
+2. `BeginAuthSessionViaCredentials/v1` 发起登录；
+3. 填入配置的 `shared_secret`，本地 HMAC-SHA1 **直接算出当前 5 位 Steam 令牌验证码**（完全不需要看手机）；
+4. `UpdateAuthSessionWithSteamGuardCode/v1` 自动填码，`PollAuthSessionStatus` 领取全新 200 天 `refresh_token`。
+
+> **如何获取 `shared_secret`？**
+> - 令牌绑在 **ASF / SDA** 上：打开 `.maFile` 即可见 `"shared_secret": "xxxxxx="`；
+> - 绑在**已 Root 的安卓机**（Magisk/KernelSU）上：明文保存在 `/data/data/com.valvesoftware.android.steam.community/files/Steamguard-你的SteamID` 中。
+
+> ⚠️ 所有保活流程均带失败退避冷却（滚动续期 15 分钟 / 密码重登 30 分钟 / Cookie 15 分钟），不会对 Steam 疯狂重试触发风控。
+
+---
+
+## 🔔 监控可靠性（0.3.0）
+
+家庭库变动监控在此版本补齐了完整的运营与观测能力，重试不丢事件、失败可退避、状态可观测：
+
+- **单飞锁（Single-flight）**：聊天指令 / WebUI 同步按钮 / 后台轮询三入口并发触发时自动合并为一次执行，从源头消灭重复拉取与重复推送竞态。
+- **事件重试队列**：所有变动事件先持久化到 `pending_notifications` 表再播报；推送失败按指数退避（最长 1 小时）自动重试，进程重启后补播，绝不丢通知。
+- **移出与归属变更播报**：新游戏入库卡片之外，游戏被移出家庭库（含"曾归属义父"）、归属义父增减、退款/共享状态变化均有独立文案播报；移出数量异常时会触发安全阀静默处理，防止刷屏。
+- **批量商店详情**：新入库游戏批量拉取 `price_overview,basic,genres,categories`（chunk ≤ 20，实测仅该形态多 appid 可用），单发兜底 + 429 自动熔断。
+- **真实好评率**：卡片好评率来自 `appreviews` 真实评价摘要（好评如潮/特别好评简述 + 精确百分比），无评价数据时中性展示，绝不虚构。
+- **📉 家庭库降价监控**：每 20 小时自动巡检一次家庭库游戏的商店实时价格（单轮最多 120 款，只对比本地已有价格记录的游戏），检测到**降价或折扣加深**即向订阅会话推送降价提醒，并同步刷新看板估值缓存。
+
+  降价提醒示例输出：
+  ```text
+  📉 降价提醒：《Hades II》 ¥199.0 → ¥99.0 (折扣 50%)
+  ```
+- **游玩统计接线**：接入此前未使用的 `GetPlaytimeSummary` 接口，WebUI 大盘新增"🎮 最近游玩"面板（成员、游戏、总时长、最后游玩时间），游玩数据获取失败不影响检查主流程。
+- **快照修剪**：历史快照自动修剪（最新 200 条永保 + 超过 30 天的删除），防止数据库无限膨胀。
+- **自适应轮询退避**：连续检查失败时轮询间隔按 `base * min(4, 2^n)` 指数倍增（最长 4 倍），成功后自动恢复，避免对故障状态的 Steam 疯狂重试。
+- **同步状态观测**：最近一次成功同步时间 / 耗时 / 结果消息 / 失败标记持久化在 `sync_*` 观测键中，WebUI 顶部实时显示"🕘 最后同步 X 分钟前"徽标。
+
 ---
 
 ## ⚙️ 配置与绑定
@@ -81,13 +135,19 @@ git clone https://github.com/LunarFlow42/astrbot_plugin_steam_family.git data/pl
 在 AstrBot Web 控制台进入「插件管理」->「插件配置」找到 `Steam 家庭资产管家`，填写以下核心配置：
 - **`access_token`**：粘贴上述获取到的 `webapi_token` 字符串。
 - **`steam_id`**：填写你的 17 位 Steam 64 位数字 ID。
-- **`cookie`**（可选·永久保活）：若填入 Steam 网页端 `steamLoginSecure` Cookie，插件将在 Token 过期时全自动静默刷新，永久保活免维护！
+- **`enable_price_watch`**（默认开启）：家庭库游戏降价监控，每 20 小时自动巡检一次并在降价/折扣加深时推送提醒。
+- **`cookie`**（可选·保活兜底）：填入 Steam 网页端 `steamLoginSecure` Cookie，作为保活链路的最终兜底。
+- **全自动保活（可选但强烈推荐）**：
+  - 路线二：聊天发送 `/steam_qr` 扫码即可，无需任何手动配置；
+  - 路线一：填写 **`account_name`（账号名）+ `password`（密码）+ `shared_secret`（2FA 秘钥）**，达成 100% 永不掉线；
 - **`proxy`**：若服务器位于中国大陆无法直连 Steam API，可配置代理地址（如 `http://127.0.0.1:7890`）。
 
 ### 方式 B：聊天指令快捷配置
 在机器人所在的聊天中发送：
 ```text
-/steam_bind <你的Token> <你的SteamID>
+/steam_qr              # 手机扫码登录（推荐，一步到位）
+/steam_bind <Token> <SteamID>
+/steam_cred <账号名> <密码> <shared_secret>   # 路线一全自动重登凭据
 /steam_sub
 /steam_check
 ```
@@ -111,6 +171,11 @@ git clone https://github.com/LunarFlow42/astrbot_plugin_steam_family.git data/pl
 
 | 指令 | 说明 | 兼容别名 | 使用示例 |
 |---|---|---|---|
+| `/steam_qr` | 📱 扫码登录：获取 200 天令牌并自动开启滚动续期 | `/steam qr`, `/steam扫码` | `/steam_qr` |
+| `/steam_relogin` | 🔐 账号密码+2FA秘钥 全自动重登（ASF 同款） | `/steam relogin`, `/steam重登` | `/steam_relogin` |
+| `/steam_refresh` | 🛢️ 手动执行一次 Refresh Token 滚动续期 | `/steam refresh`, `/steam续期` | `/steam_refresh` |
+| `/steam_code` | 🔑 显示当前 5 位 Steam 令牌动态验证码 | `/steam code`, `/steam令牌` | `/steam_code` |
+| `/steam_cred <账号> <密码> [秘钥]` | 保存路线一全自动重登凭据 | `/steam cred`, `/steam凭据` | `/steam_cred myacct Pass! cWFh...` |
 | `/steam_check` | 手动触发一次家庭库变动检查与同步 | `/steam check`, `/steam同步`, `/家庭库检查` | `/steam check` |
 | `/steam_sub` | 订阅当前会话的家庭库新游戏变动推送 | `/steam sub`, `/steam订阅` | `/steam sub` |
 | `/steam_unsub` | 取消当前会话的变动推送订阅 | `/steam unsub`, `/steam退订` | `/steam unsub` |
@@ -139,8 +204,26 @@ git clone https://github.com/LunarFlow42/astrbot_plugin_steam_family.git data/pl
 本项目在开发过程中借鉴了开源社区优秀项目的创意与实现思路，特此致谢：
 - 🌟 **[AstrBot 框架](https://github.com/AstrBotDevs/AstrBot)**：强大的跨平台 LLM 机器人与插件开发框架。
 - 🌟 **Steam 逆向工程社区（SteamRE / SteamDB 等）**：提供了对 Valve 新版 `IFamilyGroupsService` API 及 Token 提取机制的基础协议逆向支持。
+- 🌟 **[ArchiSteam Farm (ASF)](https://github.com/JustArchiNET/ArchiSteamFarm) / [node-steam-session](https://github.com/DoctorMcKay/node-steam-session)**：本插件"永不掉线"保活体系（`IAuthenticationService` 登录协议、`renewal_type` 滚动续期、SteamGuard 算码）的协议参考与灵感来源。
 - 🌟 **开源社区同类项目（如 [koishi-steam-family-bot](https://github.com/kt-fun/koishi-steam-family-bot)）**：提供了群聊家庭库监控的场景实践与设计参考。
 - 🌟 **Steam 官方 Web API (`IFamilyGroupsService`)**：提供家庭组底层数据支持。
+
+---
+
+## 📡 数据出站与外部依赖披露（隐私透明化）
+
+本插件运行时会与以下外部服务通信，部署前请确认网络策略与隐私预期：
+
+| 域名 | 用途 | 发送内容 |
+|---|---|---|
+| `api.steampowered.com` | 家庭组/鉴权/登录协议 | 账号名、RSA 加密后的密码（不见明文）、令牌 |
+| `store.steampowered.com` | 游戏详情/评价/价格 | AppID 查询；仅在配置了 Cookie 时携带 Cookie |
+| `steamcommunity.com` | 昵称/头像 XML 兜底 | SteamID |
+| `*.steamstatic.com` | 头像与封面图 | 仅图片拉取 |
+| `api.qrserver.com` | 扫码登录二维码渲染 | 一次性 s.team 登录链接（失败时自动降级为文字链接） |
+| `t2i.soulter.top` | （AstrBot 框架行为）卡片 html_render 截图 | 模板与卡片数据（可在框架内改用本地渲染） |
+
+另请注意：**账号密码 / `shared_secret` / 各类令牌会以明文形式**存储在 AstrBot 配置文件与插件 SQLite 数据库（`data/plugin_data/astrbot_plugin_steam_family/`，目录权限已自动收紧为 `700`、库文件 `600`）中。请确保宿主机目录访问可控；如需更高强度，可对 `data/` 目录启用磁盘加密。
 
 ---
 

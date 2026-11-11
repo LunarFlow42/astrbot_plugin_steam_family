@@ -13,6 +13,36 @@
     "obvious_hint": true,
     "default": ""
   },
+  "account_name": {
+    "description": "Steam 账号名 (路线一·2FA秘钥全自动重登)",
+    "type": "string",
+    "hint": "【最稳保活·路线一】填写 Steam 登录账号名，搭配下方密码与 shared_secret，插件可在 Token 彻底失效时像 ASF 一样全自动重新登录，100% 永不掉线",
+    "default": ""
+  },
+  "password": {
+    "description": "Steam 登录密码 (路线一·全自动重登)",
+    "type": "string",
+    "hint": "路线一配套密码。插件会在断线时自动用 RSA 加密后发送给 Steam 完成重登（加密传输，不会明文出现在日志中）",
+    "default": ""
+  },
+  "shared_secret": {
+    "description": "Steam 2FA 令牌秘钥 shared_secret (Base64)",
+    "type": "string",
+    "hint": "从 .maFile (SDA)、ASF 配置、或已 Root 安卓的 /data/data/com.valvesoftware.android.steam.community/files/Steamguard-你的SteamID 文件中提取的 \"shared_secret\" 字段 (Base64)。填入后插件可离线算出 5 位动态验证码，实现全自动重登",
+    "default": ""
+  },
+  "refresh_token": {
+    "description": "Steam Refresh Token (扫码后自动保存，勿动)",
+    "type": "string",
+    "hint": "200 天长效凭据。可用 /steam_qr 扫码登录自动获取；插件会每日滚动续期并自动回写此字段（寿命重置为 200 天），无需手动维护",
+    "default": ""
+  },
+  "enable_auto_relogin": {
+    "description": "启用断线全自动重登 (路线一)",
+    "type": "bool",
+    "hint": "开启后当 Refresh Token 彻底失效时，插件自动使用账号密码 + shared_secret 本地算码完成重登（ASF 同款永不掉线），无需人工干预",
+    "default": true
+  },
   "steam_id": {
     "description": "绑定的 64 位 SteamID (17位纯数字)",
     "type": "string",
@@ -31,6 +61,12 @@
     "type": "int",
     "hint": "建议设为 15-60 分钟，避免频繁请求触发 429 限流",
     "default": 15
+  },
+  "enable_price_watch": {
+    "description": "启用家庭库游戏降价监控",
+    "type": "bool",
+    "hint": "开启后每 20 小时自动巡检一次家庭库游戏的商店价格（单轮最多 120 款），检测到降价或折扣加深时向订阅会话推送降价提醒（📉）",
+    "default": true
   },
   "proxy": {
     "description": "网络代理地址",
@@ -51,10 +87,16 @@
     "default": true
   },
   "filter_non_games": {
-    "description": "自动过滤工具/DLC/Demo等非游戏应用",
+    "description": "自动过滤非游戏应用（专用服务器/原声带/SDK 等）",
     "type": "bool",
-    "hint": "开启后自动剔除 Dedicated Server、Soundtrack 等非正式游戏",
+    "hint": "开启后按名称关键词黑名单（dedicated server / soundtrack / test server / sdk / wallpaper / benchmark 等）与 exclude_reason 过滤掉原声带、SDK、专用服务器等非游戏应用（注意：不会过滤 DLC）",
     "default": true
+  },
+  "broadcast_free_games": {
+    "description": "是否播报免费游戏入库（默认仅付费游戏播报）",
+    "type": "bool",
+    "hint": "开启后免费游戏入库也会推送播报卡片；关闭时免费游戏静默入库仅更新基线，不向群内刷屏",
+    "default": false
   },
   "subscribers": {
     "description": "新游戏入库推送的目标群聊/私聊列表",

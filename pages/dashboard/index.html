@@ -165,7 +165,7 @@
       <div class="brand">
         <div class="brand-icon">🎮</div>
         <div>
-          <div class="brand-title">Steam 家庭资产全景管家 <span style="font-size: 11px; background: rgba(25, 153, 255, 0.2); color: var(--steam-blue); padding: 2px 6px; border-radius: 4px; font-weight: normal;">SFLV v2.0</span> <span id="tokenStatusPill"></span></div>
+          <div class="brand-title">Steam 家庭资产全景管家 <span style="font-size: 11px; background: rgba(25, 153, 255, 0.2); color: var(--steam-blue); padding: 2px 6px; border-radius: 4px; font-weight: normal;">SFLV v2.0</span> <span id="tokenStatusPill"></span><span id="syncStatusPill"></span></div>
           <div class="brand-subtitle">AstrBot Steam Family Agent • 实时资产大盘 & 义父贡献榜</div>
         </div>
       </div>
@@ -253,6 +253,27 @@
             <span style="color: var(--text-dim); font-size: 12px;">加载中...</span>
           </div>
         </div>
+      </div>
+
+      <!-- Recent Plays Panel (0.3.0 新增：成员最近游玩统计，空数据时由 JS 隐藏) -->
+      <div class="section-card" id="recentPlaysPanel" style="display: none; margin-bottom: 24px;">
+        <div class="section-header">
+          <div class="section-title">🎮 最近游玩 (Recently Played)</div>
+          <span style="font-size: 12px; color: var(--text-muted);">家庭成员最近在玩什么（按最后游玩时间倒序）</span>
+        </div>
+        <table class="ranking-table">
+          <thead>
+            <tr>
+              <th>成员</th>
+              <th>游戏</th>
+              <th style="width: 140px;">总游玩时长</th>
+              <th style="width: 170px;">最后游玩时间</th>
+            </tr>
+          </thead>
+          <tbody id="recentPlaysBody">
+            <tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 20px;">暂无游玩记录</td></tr>
+          </tbody>
+        </table>
       </div>
 
       <!-- Recent 6 Additions -->
@@ -452,6 +473,33 @@
     let selectedCoopMembers = new Set();
     const MEMBER_COLORS = ['#38bdf8', '#a855f7', '#34d399', '#fbbf24', '#f87171', '#818cf8'];
 
+    // XSS 防护：所有外部数据（Steam/家庭组返回的昵称、游戏名、别名、owners 等）进 innerHTML 前必须转义
+    function escapeHtml(s) {
+      if (s === null || s === undefined) return "";
+      return String(s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    // XSS 防护：图片 URL 仅放行 Steam 官方静态资源前缀，其余一律回落（avatar 落灰底首字母、封面落 header 默认图）
+    const STEAM_MEDIA_PREFIXES = [
+      "https://avatars.steamstatic.com/",
+      "https://cdn.akamai.steamstatic.com/",
+      "https://cdn.cloudflare.steamstatic.com/",
+      "https://shared.fastly.steamstatic.com/",
+      "https://store.steampowered.com/"
+    ];
+    function safeSteamUrl(u, fallback) {
+      const s = String(u || "");
+      for (let i = 0; i < STEAM_MEDIA_PREFIXES.length; i++) {
+        if (s.indexOf(STEAM_MEDIA_PREFIXES[i]) === 0) return s;
+      }
+      return fallback || "";
+    }
+
     // Tab Switching
     function switchTab(tabId) {
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
@@ -611,21 +659,34 @@
         const ti = data.token_info;
         const pill = document.getElementById("tokenStatusPill");
         if (pill) {
+          const modeMsg = ti.keepalive_mode ? ` • ${escapeHtml(ti.keepalive_mode)}` : '';
           if (ti.valid) {
             const autoMsg = ti.has_cookie_autorenew ? ' • 🔄 Cookie 自动保活' : '';
-            pill.innerHTML = `<span style="font-size: 11px; background: rgba(34, 197, 94, 0.15); color: var(--steam-green); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(34, 197, 94, 0.3); font-weight: normal;">🟢 Token 有效 (剩 ${ti.remaining_hours}h)${autoMsg}</span>`;
+            pill.innerHTML = `<span style="font-size: 11px; background: rgba(34, 197, 94, 0.15); color: var(--steam-green); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(34, 197, 94, 0.3); font-weight: normal;">🟢 Token 有效 (剩 ${Number(ti.remaining_hours)}h${autoMsg})${modeMsg ? modeMsg : ''}</span>`;
           } else {
-            pill.innerHTML = `<span style="font-size: 11px; background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(244, 63, 94, 0.3); font-weight: normal;">🔴 Token 已失效 (填入 Cookie 可自动续签)</span>`;
+            pill.innerHTML = `<span style="font-size: 11px; background: rgba(244, 63, 94, 0.15); color: var(--accent-rose); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(244, 63, 94, 0.3); font-weight: normal;">🔴 Token 已失效 ${modeMsg || '(扫码 /steam_qr 或配置密码+秘钥激活保活)'}</span>`;
+          }
+          const rtInfo = ti.has_refresh_token && ti.refresh_token_days_left
+            ? ` • 🎫 Refresh Token 剩 ${Number(ti.refresh_token_days_left)} 天`
+            : '';
+          if (rtInfo) {
+            pill.innerHTML += `<span style="font-size: 11px; background: rgba(59, 130, 246, 0.12); color: var(--steam-blue); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(59, 130, 246, 0.25); font-weight: normal; margin-left: 6px;">${rtInfo}</span>`;
           }
         }
       }
 
-      document.getElementById("valTotalGames").innerHTML = `${totalGames} <span style="font-size: 14px; font-weight: normal; color: var(--text-dim);">款</span>`;
+      // 同步状态观测徽标（0.3.0）：最后同步 X 分钟前 / 尚未同步 / 上次失败
+      renderSyncStatusPill(data.sync_info);
+
+      // 最近游玩面板（0.3.0）：空列表自动隐藏
+      renderRecentPlays(data.recent_plays);
+
+      document.getElementById("valTotalGames").innerHTML = `${Number(totalGames)} <span style="font-size: 14px; font-weight: normal; color: var(--text-dim);">款</span>`;
       document.getElementById("valValuationStatus").innerHTML = `⚡ <b style="color:var(--steam-blue);">实时库存变动极速监控中</b> (新入库游戏将自动单次查价并推卡片)`;
 
-      document.getElementById("valTotalInitial").innerText = `¥ ${data.total_initial_value || 0}`;
-      document.getElementById("valTotalCurrent").innerText = `¥ ${data.total_current_value || 0}`;
-      document.getElementById("valMemberCount").innerHTML = `${data.member_count || 0} <span style="font-size: 14px; font-weight: normal; color: var(--text-dim);">位</span>`;
+      document.getElementById("valTotalInitial").innerText = `¥ ${Number(data.total_initial_value || 0)}`;
+      document.getElementById("valTotalCurrent").innerText = `¥ ${Number(data.total_current_value || 0)}`;
+      document.getElementById("valMemberCount").innerHTML = `${Number(data.member_count || 0)} <span style="font-size: 14px; font-weight: normal; color: var(--text-dim);">位</span>`;
 
       // Rankings
       const rankBody = document.getElementById("rankingTableBody");
@@ -634,9 +695,10 @@
           const rankPillClass = i === 0 ? 'rank-1' : (i === 1 ? 'rank-2' : (i === 2 ? 'rank-3' : 'rank-other'));
           const rankIcon = i === 0 ? '🥇' : (i === 1 ? '🥈' : (i === 2 ? '🥉' : `#${i + 1}`));
           const memberColor = MEMBER_COLORS[i % MEMBER_COLORS.length];
-          const avatarHtml = r.avatar_url 
-            ? `<img src="${r.avatar_url}" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border-color); flex-shrink: 0;" alt="avatar">` 
-            : `<div style="width: 28px; height: 28px; border-radius: 50%; background: ${memberColor}; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; color: #fff; flex-shrink: 0;">${(r.persona_name || 'U')[0]}</div>`;
+          const avatarUrl = safeSteamUrl(r.avatar_url, "");
+          const avatarHtml = avatarUrl
+            ? `<img src="${escapeHtml(avatarUrl)}" style="width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border-color); flex-shrink: 0;" alt="avatar">`
+            : `<div style="width: 28px; height: 28px; border-radius: 50%; background: ${memberColor}; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; color: #fff; flex-shrink: 0;">${escapeHtml((r.persona_name || 'U')[0])}</div>`;
           return `
             <tr>
               <td><span class="rank-pill ${rankPillClass}">${rankIcon}</span></td>
@@ -644,21 +706,21 @@
                 <div style="display: flex; align-items: center; gap: 8px;">
                   ${avatarHtml}
                   <div>
-                    <div style="font-weight: 700; color: ${memberColor}; font-size: 13px;">${r.persona_name || r.steamid}</div>
-                    <div style="font-size: 10px; color: var(--text-dim);">${r.steamid}</div>
+                    <div style="font-weight: 700; color: ${memberColor}; font-size: 13px;">${escapeHtml(r.persona_name || r.steamid)}</div>
+                    <div style="font-size: 10px; color: var(--text-dim);">${escapeHtml(r.steamid)}</div>
                   </div>
                 </div>
               </td>
-              <td><b>${r.game_count}</b> 款</td>
-              <td style="color: var(--steam-green); font-weight: 700;">¥ ${r.total_initial_price}</td>
-              <td>¥ ${r.total_current_price}</td>
+              <td><b>${Number(r.game_count)}</b> 款</td>
+              <td style="color: var(--steam-green); font-weight: 700;">¥ ${Number(r.total_initial_price)}</td>
+              <td>¥ ${Number(r.total_current_price)}</td>
               <td>
                 <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted);">
                   <span>贡献占比</span>
-                  <span style="font-weight: 700; color: ${memberColor};">${r.percentage}%</span>
+                  <span style="font-weight: 700; color: ${memberColor};">${Number(r.percentage)}%</span>
                 </div>
                 <div class="progress-bar-bg">
-                  <div class="progress-bar-fill" style="width: ${r.percentage}%; background: ${memberColor};"></div>
+                  <div class="progress-bar-fill" style="width: ${Number(r.percentage)}%; background: ${memberColor};"></div>
                 </div>
               </td>
             </tr>
@@ -672,9 +734,9 @@
       const genreBox = document.getElementById("genreDistribution");
       if (data.top_genres && data.top_genres.length > 0) {
         genreBox.innerHTML = data.top_genres.map(g => `
-          <div class="genre-chip" onclick="quickFilterGenre('${g.genre}')">
-            <span>${g.genre}</span>
-            <span class="genre-count">${g.count}</span>
+          <div class="genre-chip" data-genre="${escapeHtml(g.genre)}">
+            <span>${escapeHtml(g.genre)}</span>
+            <span class="genre-count">${Number(g.count)}</span>
           </div>
         `).join("");
       } else {
@@ -686,11 +748,11 @@
       if (data.price_stats) {
         const ps = data.price_stats;
         priceBox.innerHTML = `
-          <div class="genre-chip"><span>免费 / 赠送</span><span class="genre-count">${ps.free || 0}</span></div>
-          <div class="genre-chip"><span>¥ 50 内轻量</span><span class="genre-count">${ps.under50 || 0}</span></div>
-          <div class="genre-chip"><span>¥ 50 - ¥ 150 中端</span><span class="genre-count">${ps.price_50to150 || ps["50to150"] || 0}</span></div>
-          <div class="genre-chip"><span>¥ 150 - ¥ 300 热门</span><span class="genre-count">${ps["150to300"] || 0}</span></div>
-          <div class="genre-chip"><span>¥ 300+ 3A大作</span><span class="genre-count">${ps.over300 || 0}</span></div>
+          <div class="genre-chip"><span>免费 / 赠送</span><span class="genre-count">${Number(ps.free || 0)}</span></div>
+          <div class="genre-chip"><span>¥ 50 内轻量</span><span class="genre-count">${Number(ps.under50 || 0)}</span></div>
+          <div class="genre-chip"><span>¥ 50 - ¥ 150 中端</span><span class="genre-count">${Number(ps.price_50to150 || ps["50to150"] || 0)}</span></div>
+          <div class="genre-chip"><span>¥ 150 - ¥ 300 热门</span><span class="genre-count">${Number(ps["150to300"] || 0)}</span></div>
+          <div class="genre-chip"><span>¥ 300+ 3A大作</span><span class="genre-count">${Number(ps.over300 || 0)}</span></div>
         `;
       }
 
@@ -703,30 +765,97 @@
       }
     }
 
+    // 同步状态观测徽标渲染（字段缺失时不报错、不渲染）
+    function renderSyncStatusPill(syncInfo) {
+      const syncPill = document.getElementById("syncStatusPill");
+      if (!syncPill) return;
+      const ts = syncInfo && Number(syncInfo.last_success_ts || 0) > 0 ? Number(syncInfo.last_success_ts) : 0;
+      if (!ts) {
+        syncPill.innerHTML = `<span style="font-size: 11px; background: rgba(148, 163, 184, 0.12); color: var(--text-muted); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(148, 163, 184, 0.25); font-weight: normal; margin-left: 6px;">🕘 尚未同步</span>`;
+        return;
+      }
+      const agoMin = Math.max(0, Math.round(Number(syncInfo.last_success_ago_minutes || 0)));
+      const agoText = agoMin < 1 ? '刚刚' : (agoMin < 60 ? `${agoMin} 分钟前` : `${(agoMin / 60).toFixed(1)} 小时前`);
+      const failed = syncInfo && syncInfo.failed;
+      const durMs = syncInfo && Number(syncInfo.last_duration_ms || 0) > 0 ? Number(syncInfo.last_duration_ms) : 0;
+      const durText = durMs > 0 ? ` • ${(durMs / 1000).toFixed(1)}s` : '';
+      const bg = failed ? 'rgba(244, 63, 94, 0.15)' : 'rgba(34, 197, 94, 0.15)';
+      const color = failed ? 'var(--accent-rose)' : 'var(--steam-green)';
+      const border = failed ? 'rgba(244, 63, 94, 0.3)' : 'rgba(34, 197, 94, 0.3)';
+      const failNote = failed ? ' • ⚠️ 上次失败' : '';
+      syncPill.innerHTML = `<span style="font-size: 11px; background: ${bg}; color: ${color}; padding: 2px 8px; border-radius: 4px; border: 1px solid ${border}; font-weight: normal; margin-left: 6px;" title="${failed && syncInfo.last_message ? escapeHtml(syncInfo.last_message) : '最近一次成功同步时间'}">🕘 最后同步 ${agoText}${durText}${failNote}</span>`;
+    }
+
+    // 最近游玩面板渲染（0.3.0）：昵称+游戏名+时长（秒→分钟取整），空列表隐藏面板
+    function renderRecentPlays(plays) {
+      const panel = document.getElementById("recentPlaysPanel");
+      if (!panel) return;
+      const list = Array.isArray(plays) ? plays : [];
+      if (!list.length) {
+        panel.style.display = "none";
+        return;
+      }
+      panel.style.display = "";
+      const body = document.getElementById("recentPlaysBody");
+      if (!body) return;
+      body.innerHTML = list.map((p, i) => {
+        const whoRaw = (p.persona_name && String(p.persona_name)) || "家庭成员";
+        const who = escapeHtml(whoRaw);
+        const appidNum = Number(p.appid) || 0;
+        const game = escapeHtml((p.game_name && String(p.game_name)) || ("App " + (appidNum || "?")));
+        const mins = p.seconds_played ? Math.max(0, Math.round(Number(p.seconds_played) / 60)) : 0;
+        const minsText = mins > 0 ? `${mins} 分钟` : "--";
+        const lastTs = Number(p.rt_last_played || 0) > 0 ? Number(p.rt_last_played) : 0;
+        const lastText = lastTs ? new Date(lastTs * 1000).toLocaleString('zh-CN') : "--";
+        const memberColor = MEMBER_COLORS[i % MEMBER_COLORS.length];
+        const avatarUrl = safeSteamUrl(p.avatar_url, "");
+        const avatarHtml = avatarUrl
+          ? `<img src="${escapeHtml(avatarUrl)}" style="width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--border-color); flex-shrink: 0;" alt="avatar">`
+          : `<div style="width: 26px; height: 26px; border-radius: 50%; background: ${memberColor}; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: bold; color: #fff; flex-shrink: 0;">${escapeHtml(whoRaw[0] || '?')}</div>`;
+        return `
+          <tr>
+            <td>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                ${avatarHtml}
+                <span style="font-weight: 700; color: ${memberColor}; font-size: 13px;">${who}</span>
+              </div>
+            </td>
+            <td>
+              <a href="https://store.steampowered.com/app/${appidNum > 0 ? appidNum : ''}" target="_blank" style="color: var(--text-main); text-decoration: none;">${game}</a>
+            </td>
+            <td>⏱️ ${minsText}</td>
+            <td style="color: var(--text-muted); font-size: 12px;">${lastText}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
     // Helper for Game Card HTML
     function renderGameCardHTML(g) {
-      const priceText = g.final_price > 0 ? `¥ ${g.final_price}` : (g.is_cached ? '免费 / 已入库' : '<span style="color:#f59e0b;">⏳ 估值中</span>');
-      const discountPill = g.discount_percent > 0 ? `<span class="discount-badge">-${g.discount_percent}%</span>` : '';
-      const storeUrl = `https://store.steampowered.com/app/${g.appid}`;
-      const acquiredDate = g.rt_time_acquired > 0
-        ? new Date(g.rt_time_acquired * 1000).toLocaleDateString('zh-CN')
+      const appid = Number(g.appid) || 0;
+      const priceText = Number(g.final_price) > 0 ? `¥ ${Number(g.final_price)}` : (g.is_cached ? '免费 / 已入库' : '<span style="color:#f59e0b;">⏳ 估值中</span>');
+      const discountPill = Number(g.discount_percent) > 0 ? `<span class="discount-badge">-${Number(g.discount_percent)}%</span>` : '';
+      const storeUrl = `https://store.steampowered.com/app/${appid}`;
+      const headerUrl = safeSteamUrl(g.header_image, `https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg`);
+      const acquiredDate = Number(g.rt_time_acquired) > 0
+        ? new Date(Number(g.rt_time_acquired) * 1000).toLocaleDateString('zh-CN')
         : '';
       const acquiredBadge = acquiredDate ? `<span style="font-size: 11px; color: var(--steam-blue); background: rgba(25, 153, 255, 0.12); padding: 1px 6px; border-radius: 4px;">⏱️ ${acquiredDate}</span>` : '';
       return `
-        <div class="game-card" onclick="window.open('${storeUrl}', '_blank')" style="cursor: pointer;">
+        <div class="game-card" data-store-url="${escapeHtml(storeUrl)}" style="cursor: pointer;">
           <div class="game-cover-wrap">
-            <img src="${g.header_image}" alt="Cover" loading="lazy" onerror="this.src='https://cdn.akamai.steamstatic.com/steam/apps/${g.appid}/header.jpg'">
+            <img src="${escapeHtml(headerUrl)}" alt="Cover" loading="lazy" onerror="this.onerror=null;this.src='https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg'">
             ${discountPill}
           </div>
           <div class="game-card-body">
             <div>
-              <div class="game-card-title" title="${g.name}">${g.name}</div>
-              <div class="game-card-subtitle" title="${g.original_name}">${g.original_name && g.original_name !== g.name ? g.original_name : g.owners}</div>
+              <div class="game-card-title" title="${escapeHtml(g.name)}">${escapeHtml(g.name)}</div>
+              <div class="game-card-subtitle" title="${escapeHtml(g.original_name)}">${g.original_name && g.original_name !== g.name ? escapeHtml(g.original_name) : escapeHtml(g.owners)}</div>
               <div style="margin-top: 3px; min-height: 18px;">${acquiredBadge}</div>
             </div>
             <div class="game-card-meta">
               <span class="game-price">${priceText}</span>
-              <span class="game-rating">⭐ ${g.positive_rate}% 好评</span>
+              <span class="game-rating">⭐ ${Number(g.positive_rate)}% 好评</span>
             </div>
           </div>
         </div>
@@ -738,15 +867,15 @@
       // Member Filter
       const memberSelect = document.getElementById("libMemberFilter");
       if (data.rankings) {
-        memberSelect.innerHTML = `<option value="">👤 全部成员共享 (${data.total_games} 款)</option>` +
-          data.rankings.map(r => `<option value="${r.steamid}">👤 义父 ${r.persona_name || r.steamid} (${r.game_count}款)</option>`).join("");
+        memberSelect.innerHTML = `<option value="">👤 全部成员共享 (${Number(data.total_games)} 款)</option>` +
+          data.rankings.map(r => `<option value="${escapeHtml(r.steamid)}">👤 义父 ${escapeHtml(r.persona_name || r.steamid)} (${Number(r.game_count)}款)</option>`).join("");
       }
 
       // Genre Filter
       const genreSelect = document.getElementById("libGenreFilter");
       if (data.top_genres) {
         genreSelect.innerHTML = `<option value="">🏷️ 全部游戏类型</option>` +
-          data.top_genres.map(g => `<option value="${g.genre}">🏷️ ${g.genre} (${g.count})</option>`).join("");
+          data.top_genres.map(g => `<option value="${escapeHtml(g.genre)}">🏷️ ${escapeHtml(g.genre)} (${Number(g.count)})</option>`).join("");
       }
     }
 
@@ -810,19 +939,21 @@
 
       // Render Table
       tableBody.innerHTML = filtered.slice(0, 100).map(g => {
-        const acq = g.rt_time_acquired > 0 ? new Date(g.rt_time_acquired * 1000).toLocaleDateString('zh-CN') : '--';
+        const acq = Number(g.rt_time_acquired) > 0 ? new Date(Number(g.rt_time_acquired) * 1000).toLocaleDateString('zh-CN') : '--';
+        const appid = Number(g.appid) || 0;
+        const storeUrl = `https://store.steampowered.com/app/${appid}`;
         return `
           <tr>
-            <td><code>${g.appid}</code></td>
-            <td><b>${g.name}</b> ${g.original_name && g.original_name !== g.name ? `<span style="color:var(--text-dim); font-size:11px;">(${g.original_name})</span>` : ''}</td>
-            <td><span style="font-size: 11px; color: var(--text-muted);">${(g.genres || []).slice(0, 2).join(", ")}</span></td>
-            <td><span style="font-size: 12px; color: var(--steam-blue);">${g.owners}</span></td>
+            <td><code>${appid}</code></td>
+            <td><b>${escapeHtml(g.name)}</b> ${g.original_name && g.original_name !== g.name ? `<span style="color:var(--text-dim); font-size:11px;">(${escapeHtml(g.original_name)})</span>` : ''}</td>
+            <td><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml((g.genres || []).slice(0, 2).join(", "))}</span></td>
+            <td><span style="font-size: 12px; color: var(--steam-blue);">${escapeHtml(g.owners)}</span></td>
             <td><span style="font-size: 12px; color: var(--text-muted);">${acq}</span></td>
-            <td>¥ ${g.initial_price}</td>
-            <td style="color: var(--steam-green); font-weight: 700;">¥ ${g.final_price}</td>
-            <td>⭐ ${g.positive_rate}%</td>
+            <td>¥ ${Number(g.initial_price)}</td>
+            <td style="color: var(--steam-green); font-weight: 700;">¥ ${Number(g.final_price)}</td>
+            <td>⭐ ${Number(g.positive_rate)}%</td>
             <td style="text-align: center;">
-              <button class="btn btn-secondary" style="font-size: 11px; padding: 3px 8px;" onclick="window.open('https://store.steampowered.com/app/${g.appid}', '_blank')">商店 ↗</button>
+              <button class="btn btn-secondary" style="font-size: 11px; padding: 3px 8px;" data-store-url="${escapeHtml(storeUrl)}">商店 ↗</button>
             </td>
           </tr>
         `;
@@ -841,22 +972,24 @@
       const container = document.getElementById("coopMemberChips");
       if (!data.rankings) return;
       container.innerHTML = data.rankings.map((r, i) => `
-        <div class="member-select-chip" id="chip-${r.steamid}" onclick="toggleCoopMember('${r.steamid}')">
-          <input type="checkbox" id="chk-${r.steamid}">
-          <span>👤 ${r.persona_name || r.steamid} (${r.game_count} 款)</span>
+        <div class="member-select-chip" id="chip-${escapeHtml(r.steamid)}" data-steamid="${escapeHtml(r.steamid)}">
+          <input type="checkbox" id="chk-${escapeHtml(r.steamid)}">
+          <span>👤 ${escapeHtml(r.persona_name || r.steamid)} (${Number(r.game_count)} 款)</span>
         </div>
       `).join("");
     }
 
-    function toggleCoopMember(steamid) {
+    function toggleCoopMember(steamid, chipEl) {
+      const chip = chipEl || document.getElementById(`chip-${steamid}`);
+      const chk = chip ? chip.querySelector("input[type='checkbox']") : null;
       if (selectedCoopMembers.has(steamid)) {
         selectedCoopMembers.delete(steamid);
-        document.getElementById(`chip-${steamid}`).classList.remove('active');
-        document.getElementById(`chk-${steamid}`).checked = false;
+        if (chip) chip.classList.remove('active');
+        if (chk) chk.checked = false;
       } else {
         selectedCoopMembers.add(steamid);
-        document.getElementById(`chip-${steamid}`).classList.add('active');
-        document.getElementById(`chk-${steamid}`).checked = true;
+        if (chip) chip.classList.add('active');
+        if (chk) chk.checked = true;
       }
       computeCoopMatches();
     }
@@ -878,7 +1011,7 @@
         return selectedList.every(m => app.owner_steamids.includes(m));
       });
 
-      resultText.innerHTML = `已选择 <b>${selectedList.length}</b> 位成员，共同拥有 <b>${matched.length}</b> 款游戏：`;
+      resultText.innerHTML = `已选择 <b>${Number(selectedList.length)}</b> 位成员，共同拥有 <b>${Number(matched.length)}</b> 款游戏：`;
 
       if (matched.length === 0) {
         grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: var(--text-dim); padding: 40px; background: rgba(0,0,0,0.2); border-radius: var(--radius-md);">暂无共同拥有的游戏（家庭组共享库存中每款游戏只能一人同时在线游玩，若要联机需各自拥有独立副本）</div>`;
@@ -893,7 +1026,7 @@
       const select = document.getElementById("rouletteGenreSelect");
       if (data.top_genres) {
         select.innerHTML = `<option value="">🎲 全类型随机</option>` +
-          data.top_genres.map(g => `<option value="${g.genre}">🏷️ 随机 ${g.genre}</option>`).join("");
+          data.top_genres.map(g => `<option value="${escapeHtml(g.genre)}">🏷️ 随机 ${escapeHtml(g.genre)}</option>`).join("");
       }
     }
 
@@ -912,19 +1045,21 @@
       const interval = setInterval(() => {
         const randomItem = candidates[Math.floor(Math.random() * candidates.length)];
         res.innerHTML = `
-          <div style="font-size: 26px; color: #fff;">🎮 《${randomItem.name}》</div>
-          <div style="font-size: 13px; color: var(--steam-blue); margin-top: 6px;">归属义父: ${randomItem.owners} • 价格: ¥ ${randomItem.final_price}</div>
+          <div style="font-size: 26px; color: #fff;">🎮 《${escapeHtml(randomItem.name)}》</div>
+          <div style="font-size: 13px; color: var(--steam-blue); margin-top: 6px;">归属义父: ${escapeHtml(randomItem.owners)} • 价格: ¥ ${Number(randomItem.final_price)}</div>
         `;
         count++;
         if (count > 20) {
           clearInterval(interval);
           btn.disabled = false;
           const finalItem = candidates[Math.floor(Math.random() * candidates.length)];
+          const finalAppid = Number(finalItem.appid) || 0;
+          const finalStoreUrl = `https://store.steampowered.com/app/${finalAppid}`;
           res.innerHTML = `
-            <div style="font-size: 30px; font-weight: 800; color: #a4d007; text-shadow: 0 0 20px rgba(164,208,7,0.5);">🎉 选中了！《${finalItem.name}》</div>
+            <div style="font-size: 30px; font-weight: 800; color: #a4d007; text-shadow: 0 0 20px rgba(164,208,7,0.5);">🎉 选中了！《${escapeHtml(finalItem.name)}》</div>
             <div style="font-size: 14px; color: #fff; margin-top: 8px;">
-              归属义父: <b style="color:var(--steam-blue);">${finalItem.owners}</b> • 好评率: <b>${finalItem.positive_rate}%</b>
-              <button class="btn btn-primary" style="margin-left: 10px; font-size: 11px; padding: 3px 10px;" onclick="window.open('https://store.steampowered.com/app/${finalItem.appid}', '_blank')">进入商店 ↗</button>
+              归属义父: <b style="color:var(--steam-blue);">${escapeHtml(finalItem.owners)}</b> • 好评率: <b>${Number(finalItem.positive_rate)}%</b>
+              <button class="btn btn-primary" style="margin-left: 10px; font-size: 11px; padding: 3px 10px;" data-store-url="${escapeHtml(finalStoreUrl)}">进入商店 ↗</button>
             </div>
           `;
           showToast(`已抽取游戏：《${finalItem.name}》！今晚就玩它了！`, true);
@@ -937,20 +1072,21 @@
       const dbBody = document.getElementById("studioTableBody");
       if (apps && apps.length > 0) {
         dbBody.innerHTML = apps.map(app => {
-          let priceDisplay = `<span style="color: var(--steam-green); font-weight: 700;">¥ ${app.final_price}</span>`;
-          if (app.final_price === 0) {
-            priceDisplay = app.is_cached 
-              ? `<span style="color: var(--text-dim);">免费/已下架 (¥ 0)</span>` 
+          const appid = Number(app.appid) || 0;
+          let priceDisplay = `<span style="color: var(--steam-green); font-weight: 700;">¥ ${Number(app.final_price)}</span>`;
+          if (Number(app.final_price) === 0) {
+            priceDisplay = app.is_cached
+              ? `<span style="color: var(--text-dim);">免费/已下架 (¥ 0)</span>`
               : `<span style="color: var(--accent-amber); font-size: 12px;">⏳ 后台估值中...</span>`;
           }
           return `
-            <tr id="row-${app.appid}">
-              <td><code>${app.appid}</code></td>
-              <td><b>${app.name}</b> ${app.original_name && app.original_name !== app.name ? `<span style="color:var(--text-dim); font-size: 11px;">(${app.original_name})</span>` : ''}</td>
-              <td><span style="color: var(--text-muted); font-size: 12px;">${app.owners}</span></td>
+            <tr id="row-${appid}">
+              <td><code>${appid}</code></td>
+              <td><b>${escapeHtml(app.name)}</b> ${app.original_name && app.original_name !== app.name ? `<span style="color:var(--text-dim); font-size: 11px;">(${escapeHtml(app.original_name)})</span>` : ''}</td>
+              <td><span style="color: var(--text-muted); font-size: 12px;">${escapeHtml(app.owners)}</span></td>
               <td>${priceDisplay}</td>
               <td style="text-align: center;">
-                <button class="btn btn-danger" onclick="removeApp(${app.appid}, '${app.name.replace(/'/g, "\\'")}')">
+                <button class="btn btn-danger" data-appid="${appid}" data-name="${escapeHtml(app.name)}">
                   🗑️ 移出游戏
                 </button>
               </td>
@@ -994,7 +1130,7 @@
       return new Promise((resolve) => {
         modalResolve = resolve;
         document.getElementById("modalTitle").innerText = title;
-        document.getElementById("modalBody").innerHTML = message.replace(/\n/g, "<br>");
+        document.getElementById("modalBody").innerHTML = escapeHtml(message).replace(/\n/g, "<br>");
         const confirmBtn = document.getElementById("modalConfirmBtn");
         confirmBtn.className = isDanger ? "btn btn-danger" : "btn btn-primary";
         document.getElementById("customModal").style.display = "flex";
@@ -1049,6 +1185,36 @@
         showToast("重置失败: " + err.message, false);
       }
     }
+
+    // 事件委托：所有动态渲染元素的点击统一走 data-* 属性，杜绝内联 onclick 字符串拼接
+    document.addEventListener("click", (e) => {
+      const target = e.target;
+      if (!target || typeof target.closest !== "function") return;
+      // 测试管理中心：移出游戏按钮（行为与原 removeApp(appid, name) 一致）
+      const removeBtn = target.closest("button[data-appid]");
+      if (removeBtn) {
+        removeApp(Number(removeBtn.dataset.appid) || 0, removeBtn.dataset.name || "");
+        return;
+      }
+      // 游戏卡片 / 商店按钮：跳转 Steam 商店
+      const storeEl = target.closest("[data-store-url]");
+      if (storeEl) {
+        const url = storeEl.dataset.storeUrl;
+        if (url) window.open(url, "_blank");
+        return;
+      }
+      // 总览页类型标签：快速筛选
+      const genreChip = target.closest("[data-genre]");
+      if (genreChip) {
+        quickFilterGenre(genreChip.dataset.genre);
+        return;
+      }
+      // 开黑雷达成员 chips
+      const coopChip = target.closest(".member-select-chip[data-steamid]");
+      if (coopChip) {
+        toggleCoopMember(coopChip.dataset.steamid, coopChip);
+      }
+    });
 
     // Auto-load on ready
     window.addEventListener("DOMContentLoaded", () => {

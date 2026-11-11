@@ -29,6 +29,41 @@ MOCK_FAMILY_APPS_RESPONSE = {
     }
 }
 
+# ---------------------------------------------------------------------------
+# IFamilyGroupsService/GetPlaytimeSummary 的 response 段
+# 真实 entry 字段形状（camelCase）：steamid / appid / firstPlayed / latestPlayed /
+# secondsPlayed —— 时长单位是秒、时间为 Unix 时间戳。
+# 注意：该接口并无 rt_playtime 字段（那是家庭库共享列表接口的 SharedApp 字段），
+# 切勿再把"分钟 ×60 换算为秒"的错误假设套用到这里。
+# ---------------------------------------------------------------------------
+MOCK_PLAYTIME_SUMMARY_RESPONSE = {
+    "response": {
+        "entries": [
+            {
+                "steamid": "76561198000000001",
+                "appid": 1086940,
+                "firstPlayed": 1718600000,
+                "latestPlayed": 1790000300,
+                "secondsPlayed": 21600,
+            },
+            {
+                "steamid": "76561198000000002",
+                "appid": 1245620,
+                "firstPlayed": 1715000000,
+                "latestPlayed": 1790000100,
+                "secondsPlayed": 5400,
+            },
+            {
+                "steamid": "76561198000000001",
+                "appid": 1245620,
+                "firstPlayed": 1716000000,
+                "latestPlayed": 1790000000,
+                "secondsPlayed": 600,
+            },
+        ]
+    }
+}
+
 MOCK_APP_DETAILS_RESPONSE = {
     "1086940": {
         "success": True,

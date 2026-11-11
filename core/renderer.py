@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +14,14 @@ class CardRenderer:
         if template_dir is None:
             template_dir = Path(__file__).parent.parent / "assets" / "templates"
         self.template_dir = Path(template_dir)
-        self.env = Environment(loader=FileSystemLoader(str(self.template_dir)))
+        # autoescape：游戏名/昵称/评价等外部文本（Steam API 或用户可控）输出前统一
+        # HTML 转义，防止含 <script> 的昵称注入卡片/看板；两个内置模板（game_card /
+        # dashboard）全部为纯文本插值、不向模板传入任何已构造的 HTML 片段，
+        # 因此无需 | safe 豁免，外部文本一律转义。
+        self.env = Environment(
+            loader=FileSystemLoader(str(self.template_dir)),
+            autoescape=select_autoescape(["html", "xml"]),
+        )
 
     def get_template_source(self, template_name: str = "game_card.html") -> str:
         """获取 Jinja2 原始模板源码。"""

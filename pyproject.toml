@@ -1,6 +1,6 @@
 [project]
 name = "astrbot_plugin_steam_family"
-version = "0.1.0"
+version = "0.3.0"
 description = "Steam 家庭资产监控与智能管家插件 for AstrBot"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,7 +27,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["core", "agent"]
-only-include = ["core", "agent", "config.py", "main.py"]
+# assets/（卡片渲染模板）与 pages/（插件 WebUI 大盘页面）、metadata.yaml 必须随
+# wheel 分发：缺失时构建产物中的卡片渲染会静默降级、插件卡片 UI 无法打开。
+only-include = ["core", "agent", "assets", "pages", "config.py", "main.py", "metadata.yaml"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
