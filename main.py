@@ -1906,16 +1906,40 @@ class SteamFamilyPlugin(Star):
         umo = getattr(event, "unified_msg_origin", None)
         yield event.plain_result("🤔 Steam 家庭管家正在调取库内数据并思考中，请稍候...")
         try:
-            cached_apps = await self.storage.get_all_cached_apps()
+            # 智能相关性检索与上下文注入：不再死板切片前 60 款游戏
+            # 1. 优先提取与用户需求关键词/类型最匹配的游戏候选
+            all_cached = await self.storage.get_all_cached_apps()
+            matched_apps = []
+            other_apps = []
+            
+            # 分词匹配度打分
+            query_terms = [t.lower() for t in query.replace("，", " ").replace("。", " ").split() if len(t) > 1]
+            for a in all_cached:
+                text_to_search = f"{a.chinese_name or ''} {a.name} {' '.join(a.genres)} {a.review_summary}".lower()
+                score = sum(1 for term in query_terms if term in text_to_search)
+                if score > 0:
+                    matched_apps.append((score, a))
+                else:
+                    other_apps.append(a)
+
+            matched_apps.sort(key=lambda x: (x[0], x[1].positive_rate), reverse=True)
+            top_candidates = [x[1] for x in matched_apps[:45]]
+            # 补齐部分高分/热门游戏作为背景库参考（最多补充到 60 款）
+            other_apps.sort(key=lambda x: x.positive_rate, reverse=True)
+            candidates = top_candidates + other_apps[: max(0, 60 - len(top_candidates))]
+
             app_summaries = [
-                f"《{a.chinese_name or a.name}》(原价¥{a.initial_price},现价¥{a.final_price},好评率{a.positive_rate}%,标签:{','.join(a.genres)})"
-                for a in cached_apps[:60]
+                f"• 《{a.chinese_name or a.name}》(原名:{a.name}, 现价:¥{a.final_price:.1f}, 好评率:{a.positive_rate}%, 评价:{a.review_summary or '暂无'}, 标签:{','.join(a.genres[:4])})"
+                for a in candidates
             ]
             library_context = "\n".join(app_summaries) if app_summaries else "暂无游戏缓存数据"
             system_prompt = (
-                "你是一个幽默风趣、见多识广的 Steam 资深游戏专家与家庭库管家。"
-                "你的任务是根据用户提供的家庭库已有游戏信息及用户具体需求，向用户做出精彩、精准的游戏推荐与分析。"
-                f"当前家庭库中部分代表性游戏如下：\n{library_context}"
+                "你是一个幽默风趣、见多识广的 Steam 资深游戏专家与家庭库管家。\n"
+                "【严格原则】：\n"
+                "1. 下方提供的【家庭库已有游戏清单】是当前家庭库真实拥有的游戏。如果清单中包含符合用户需求的游戏，必须明确指出它们**已经在家庭库里**，并向用户重点推荐！\n"
+                "2. 绝对不能把家庭库清单里已经拥有的游戏误说成'库外游戏'或'还没入库'。\n"
+                "3. 只有当用户需求在家庭库中确实找不到合适的游戏时，才可以推荐库外游戏，并温馨提醒大家入库。\n\n"
+                f"【家庭库中与本次需求相关的代表性游戏清单】：\n{library_context}"
             )
 
             if (
