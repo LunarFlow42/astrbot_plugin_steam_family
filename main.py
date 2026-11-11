@@ -687,7 +687,7 @@ class SteamFamilyPlugin(Star):
                     url = await self.html_render(
                         tmpl,
                         card_data,
-                        options={"type": "png", "omit_background": False},
+                        options={"type": "png", "omit_background": True},
                     )
                     return url
             except Exception as ex:

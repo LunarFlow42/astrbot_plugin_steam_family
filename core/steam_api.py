@@ -406,7 +406,10 @@ class SteamFamilyClient:
             name = item.get("name", "")
             exclude_reason = int(item.get("excludeReason", 0))
             app_type = int(item.get("appType", 1))
-            owner_steamids = [str(x) for x in item.get("ownerSteamids", [])]
+            owner_steamids = [
+                str(x)
+                for x in (item.get("owner_steamids") or item.get("ownerSteamids") or [])
+            ]
 
             if not appid:
                 continue
@@ -813,26 +816,69 @@ class SteamFamilyClient:
                 )
                 return None
 
-            if resp.status_code != 200:
-                self._review_summary_cache[appid] = (time.time(), None)
-                return None
+            if resp.status_code == 200:
+                # 评价接口 2xx 成功：连续 429 计数归零
+                self._reset_429_streak_on_2xx()
+                try:
+                    data = resp.json()
+                    summary = data.get("query_summary") or {}
+                    total_reviews = int(summary.get("total_reviews", 0) or 0)
+                    if total_reviews > 0:
+                        total_positive = int(summary.get("total_positive", 0) or 0)
+                        positive_rate = round(100.0 * total_positive / total_reviews)
+                        positive_rate = max(0, min(100, positive_rate))
+                        review_desc = str(summary.get("review_score_desc", "") or "")
+                        value: tuple[int, str] = (positive_rate, review_desc)
+                        self._review_summary_cache[appid] = (time.time(), value)
+                        return value
+                    # 明确 0 评价
+                    self._review_summary_cache[appid] = (time.time(), None)
+                    return None
+                except Exception:
+                    pass
 
-            # 评价接口 2xx 成功：连续 429 计数归零
-            self._reset_429_streak_on_2xx()
-            data = resp.json()
-            summary = data.get("query_summary") or {}
-            total_reviews = int(summary.get("total_reviews", 0) or 0)
-            if total_reviews <= 0:
-                # 0 评价：无好评率可言，按约定返回 None（短期缓存防重复请求）
-                self._review_summary_cache[appid] = (time.time(), None)
-                return None
-            total_positive = int(summary.get("total_positive", 0) or 0)
-            positive_rate = round(100.0 * total_positive / total_reviews)
-            positive_rate = max(0, min(100, positive_rate))
-            review_desc = str(summary.get("review_score_desc", "") or "")
-            value: tuple[int, str] = (positive_rate, review_desc)
-            self._review_summary_cache[appid] = (time.time(), value)
-            return value
+            # 2. 备用兜底路径：部分地区/网络或新游戏下 appreviews 接口会 302 重定向到首页，
+            # 此时直接抓取商店页面 HTML 解析真实评测摘要与好评率百分比
+            try:
+                page_url = f"https://store.steampowered.com/app/{appid}/"
+                page_resp = await self._client.get(
+                    page_url,
+                    params={"l": "schinese"},
+                    cookies={
+                        "birthtime": "568022401",
+                        "wants_mature_content": "1",
+                        "mature_content": "1",
+                        "lastagecheckage": "1-January-1990",
+                    },
+                    headers={
+                        "User-Agent": (
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/120.0.0.0 Safari/537.36"
+                        )
+                    },
+                    follow_redirects=True,
+                    timeout=10.0,
+                )
+                if page_resp.status_code == 200:
+                    import re
+
+                    m = re.search(
+                        r'class="game_review_summary[^>]*>([^<]+)</span>\s*\([^)]*?中的\s*(\d+)%\)',
+                        page_resp.text,
+                        re.DOTALL,
+                    )
+                    if m:
+                        review_desc = m.group(1).strip()
+                        positive_rate = max(0, min(100, int(m.group(2))))
+                        value = (positive_rate, review_desc)
+                        self._review_summary_cache[appid] = (time.time(), value)
+                        return value
+            except Exception as ex:
+                logger.debug(f"Store page review fallback for app {appid}: {ex}")
+
+            self._review_summary_cache[appid] = (time.time(), None)
+            return None
         except Exception as e:
             logger.debug(f"Review summary query for app {appid}: {e}")
             self._review_summary_cache[appid] = (time.time(), None)
