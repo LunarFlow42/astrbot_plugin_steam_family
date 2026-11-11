@@ -254,7 +254,7 @@ class SteamFamilyClient:
             "access_token": access_token,
             "include_own": "true",
             "include_excluded": "true",
-            "include_non_games": "true",
+            "include_non_games": "false" if filter_non_games else "true",
             "language": "schinese",
         }
 
