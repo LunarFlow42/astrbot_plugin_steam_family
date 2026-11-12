@@ -120,6 +120,9 @@
     .game-price { color: var(--steam-green); font-weight: 700; }
     .game-rating { color: var(--steam-blue); font-size: 11px; }
 
+    .store-link { transition: color 0.2s; }
+    .store-link:hover { color: var(--steam-blue) !important; text-decoration: underline !important; }
+
     /* Co-op Member Selector */
     .member-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
     .member-select-chip { display: flex; align-items: center; gap: 8px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); padding: 8px 14px; border-radius: 20px; cursor: pointer; transition: var(--transition); user-select: none; font-size: 13px; }
@@ -827,7 +830,9 @@
               </div>
             </td>
             <td>
-              <a href="https://store.steampowered.com/app/${appidNum > 0 ? appidNum : ''}" target="_blank" style="color: var(--text-main); text-decoration: none;">${game}</a>
+              <a href="https://store.steampowered.com/app/${appidNum > 0 ? appidNum : ''}" target="_blank" rel="noopener noreferrer" style="color: var(--text-main); text-decoration: none; display: inline-flex; align-items: center; gap: 4px;" class="store-link">
+                <b>${game}</b> <span style="font-size: 11px; opacity: 0.7;">↗</span>
+              </a>
             </td>
             <td>⏱️ ${minsText}</td>
             <td style="color: var(--text-muted); font-size: 12px;">${lastText}</td>
@@ -951,7 +956,12 @@
         return `
           <tr>
             <td><code>${appid}</code></td>
-            <td><b>${escapeHtml(g.name)}</b> ${g.original_name && g.original_name !== g.name ? `<span style="color:var(--text-dim); font-size:11px;">(${escapeHtml(g.original_name)})</span>` : ''}</td>
+            <td>
+              <a href="${escapeHtml(storeUrl)}" target="_blank" rel="noopener noreferrer" style="color: var(--text-main); text-decoration: none;" class="store-link">
+                <b>${escapeHtml(g.name)}</b>
+              </a>
+              ${g.original_name && g.original_name !== g.name ? `<span style="color:var(--text-dim); font-size:11px;">(${escapeHtml(g.original_name)})</span>` : ''}
+            </td>
             <td><span style="font-size: 11px; color: var(--text-muted);">${escapeHtml((g.genres || []).slice(0, 2).join(", "))}</span></td>
             <td><span style="font-size: 12px; color: var(--steam-blue);">${escapeHtml(g.owners)}</span></td>
             <td><span style="font-size: 12px; color: var(--text-muted);">${acq}</span></td>
@@ -1088,7 +1098,12 @@
           return `
             <tr id="row-${appid}">
               <td><code>${appid}</code></td>
-              <td><b>${escapeHtml(app.name)}</b> ${app.original_name && app.original_name !== app.name ? `<span style="color:var(--text-dim); font-size: 11px;">(${escapeHtml(app.original_name)})</span>` : ''}</td>
+              <td>
+                <a href="https://store.steampowered.com/app/${appid}" target="_blank" rel="noopener noreferrer" style="color: var(--text-main); text-decoration: none;" class="store-link">
+                  <b>${escapeHtml(app.name)}</b>
+                </a>
+                ${app.original_name && app.original_name !== app.name ? `<span style="color:var(--text-dim); font-size: 11px;">(${escapeHtml(app.original_name)})</span>` : ''}
+              </td>
               <td><span style="color: var(--text-muted); font-size: 12px;">${escapeHtml(app.owners)}</span></td>
               <td>${priceDisplay}</td>
               <td style="text-align: center;">
