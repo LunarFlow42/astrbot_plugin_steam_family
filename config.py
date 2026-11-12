@@ -46,10 +46,10 @@ class PluginConfig(BaseModel):
         default="", description="ASF 中确切的 Bot 名称（不是 Steam 登录账号名）"
     )
     asf_ipc_password: str = Field(
-        default="", repr=False, description="ASF IPCPassword（不是 Steam 密码）"
+        default="", repr=False, description="ASF config/ASF.json 中的 IPCPassword（不是 Steam 密码）"
     )
     asf_bridge_key: str = Field(
-        default="", repr=False, description="ASF 桥接插件独立密钥（至少 32 字符）"
+        default="", repr=False, description="ASF config/ASF.json 中为 SteamFamilyBridge.Key 配置的独立密钥（至少 32 字符）"
     )
     asf_request_timeout: int = Field(default=10, ge=3, le=60, description="ASF IPC 请求超时（秒）")
     family_group_id: str = Field(default="", description="Steam 家庭组 ID（留空时将自动获取）")

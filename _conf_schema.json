@@ -70,13 +70,13 @@
   "asf_ipc_password": {
     "description": "ASF IPCPassword",
     "type": "string",
-    "hint": "ASF 全局配置中的 IPCPassword，通过 Authentication 请求头发送；不是 Steam 密码，不要在聊天中填写。",
+    "hint": "填写 ASF 的 config/ASF.json 全局配置中的 IPCPassword 项（通过 Authentication 请求头发送）；不是 Steam 登录密码，不要在群聊中透露。",
     "default": ""
   },
   "asf_bridge_key": {
     "description": "SteamFamilyBridge 独立密钥",
     "type": "string",
-    "hint": "与 ASF 的 SteamFamilyBridge.Key 一致，至少 32 字符的随机密钥，通过独立请求头传输。桥接默认关闭，需单独安装并启用。",
+    "hint": "填入在 ASF 的 config/ASF.json 中为 SteamFamilyBridge.Key 自行设定的独立随机通讯密钥（至少 32 字符），两者必须严格一致；通过请求头 X-Steam-Family-Key 传输。非 Steam 密码或令牌。",
     "default": ""
   },
   "asf_request_timeout": {
