@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="../SteamFamilyBridge/SteamFamilyBridge.csproj" />
+    <Reference Include="ArchiSteamFarm" HintPath="$(ASFDirectory)/ArchiSteamFarm.dll" />
+    <Reference Include="SteamKit2" HintPath="$(ASFDirectory)/SteamKit2.dll" />
+  </ItemGroup>
+  <Target Name="CopyASFTestDependencies" AfterTargets="Build">
+    <ItemGroup>
+      <ASFTestDependency Include="$(ASFDirectory)/*.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ASFTestDependency)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

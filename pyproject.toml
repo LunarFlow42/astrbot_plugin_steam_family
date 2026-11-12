@@ -27,11 +27,15 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+# ASF build/test assemblies are local artifacts, not part of either distribution.
+exclude = ["integrations/asf/**/bin/**", "integrations/asf/**/obj/**"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["core", "agent"]
 # assets/（卡片渲染模板）与 pages/（插件 WebUI 大盘页面）、metadata.yaml 必须随
 # wheel 分发：缺失时构建产物中的卡片渲染会静默降级、插件卡片 UI 无法打开。
-only-include = ["core", "agent", "assets", "pages", "config.py", "main.py", "metadata.yaml"]
+only-include = ["core", "agent", "assets", "pages", "config.py", "main.py", "metadata.yaml", "integrations/asf"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

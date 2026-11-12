@@ -34,6 +34,24 @@ class PluginConfig(BaseModel):
     auth_device_name: str = Field(
         default="", description="固定认证设备名称（留空使用宿主机名；不要频繁更换）"
     )
+    enable_asf: bool = Field(
+        default=False,
+        description="可选 ASF 托管模式（默认关闭；启用时凭据仅来自 ASF，不回退到原生登录）",
+    )
+    asf_ipc_url: str = Field(
+        default="http://127.0.0.1:1242",
+        description="ASF IPC 服务地址（HTTP 仅限回环；远程必须 HTTPS 或 SSH 隧道）",
+    )
+    asf_bot_name: str = Field(
+        default="", description="ASF 中确切的 Bot 名称（不是 Steam 登录账号名）"
+    )
+    asf_ipc_password: str = Field(
+        default="", repr=False, description="ASF IPCPassword（不是 Steam 密码）"
+    )
+    asf_bridge_key: str = Field(
+        default="", repr=False, description="ASF 桥接插件独立密钥（至少 32 字符）"
+    )
+    asf_request_timeout: int = Field(default=10, ge=3, le=60, description="ASF IPC 请求超时（秒）")
     family_group_id: str = Field(default="", description="Steam 家庭组 ID（留空时将自动获取）")
     poll_interval_minutes: int = Field(
         default=15, ge=1, le=1440, description="后台自动轮询间隔（分钟）"

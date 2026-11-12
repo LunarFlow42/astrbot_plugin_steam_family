@@ -97,6 +97,7 @@ except ImportError:
 try:
     from .agent.tools import SteamAgentTools
     from .config import PluginConfig
+    from .core.asf_adapter import AsfSessionProvider, asf_state_key
     from .core.auth_manager import SteamAuthManager
     from .core.diff_engine import FamilyDiffEngine
     from .core.renderer import CardRenderer
@@ -116,6 +117,7 @@ try:
 except (ImportError, ValueError):
     from agent.tools import SteamAgentTools
     from config import PluginConfig
+    from core.asf_adapter import AsfSessionProvider, asf_state_key
     from core.auth_manager import SteamAuthManager
     from core.diff_engine import FamilyDiffEngine
     from core.renderer import CardRenderer
@@ -317,12 +319,70 @@ class SteamFamilyPlugin(Star):
             notify_fn=self._broadcast_notify,
             load_state_fn=lambda: self.storage.get_kv("steam_auth_state"),
         )
+        # 新功能完全独立且默认关闭；ASF 短期令牌只保存在 provider 内存中。
+        self.asf_provider: AsfSessionProvider | None = None
+        self._asf_settings: tuple | None = None
+        self._asf_family_group_id = ""
+        self._asf_sync_source: AsfSessionProvider | None = None
 
         # Register AstrBot Web APIs for embedded Plugin Pages
         self._register_astrbot_web_apis()
 
         # Start async initialization
         self._spawn(self._init_and_start_polling())
+
+    def _get_asf_provider(self) -> AsfSessionProvider:
+        settings = (
+            self.config.asf_ipc_url,
+            self.config.asf_bot_name,
+            self.config.asf_ipc_password,
+            self.config.asf_bridge_key,
+            self.config.steam_id,
+            self.config.asf_request_timeout,
+        )
+        if self.asf_provider is None or self._asf_settings != settings:
+            previous = self.asf_provider
+            if previous is not None and (previous.busy or previous is self._asf_sync_source):
+                # One sync, including Steam API recovery, keeps the same source.
+                return previous
+            state_key = asf_state_key(self.config.asf_ipc_url, self.config.asf_bot_name)
+            self.asf_provider = AsfSessionProvider(
+                *settings[:4],
+                expected_steam_id=self.config.steam_id,
+                timeout=self.config.asf_request_timeout,
+                load_state=lambda key=state_key: self.storage.get_kv(key),
+                save_state=lambda state, key=state_key: self.storage.set_kv(key, state),
+            )
+            self._asf_settings = settings
+            self._asf_family_group_id = ""
+            if previous is not None:
+                self._spawn(previous.close())
+        return self.asf_provider
+
+    def _discard_asf_provider(self) -> None:
+        previous = self.asf_provider
+        self.asf_provider = None
+        self._asf_settings = None
+        self._asf_family_group_id = ""
+        if previous is not None:
+            self._spawn(previous.close())
+
+    def _asf_native_login_notice(self) -> str | None:
+        if self.config.enable_asf:
+            return "⚠️ 已启用 ASF 托管，插件不会发起原生 Steam 登录。请在 ASF 中处理账号，私聊 /steam_asf 查看适配状态。"
+        return None
+
+    @property
+    def _active_access_token(self) -> str:
+        if self.config.enable_asf:
+            return self._get_asf_provider().access_token
+        return self.config.access_token
+
+    @property
+    def _active_steam_id(self) -> str:
+        if self.config.enable_asf:
+            return self._get_asf_provider().steam_id
+        return self.config.steam_id
 
     def _spawn(self, coro) -> asyncio.Task:
         """统一后台任务入口：创建任务并登记到 _bg_tasks 集合，结束后自动移除。
@@ -446,6 +506,34 @@ class SteamFamilyPlugin(Star):
             "automatic_login_paused": self.auth_manager.automatic_login_paused,
             "auth_device_name": self.auth.device_name,
         }
+        if self.config.enable_asf:
+            provider = self._get_asf_provider()
+            status = await provider.get_status()
+            info = decode_steam_jwt(provider.access_token)
+            data["asf_info"] = status
+            data["token_info"] = {
+                "valid": bool(
+                    info
+                    and not info.get("is_expired")
+                    and not status["paused"]
+                    and not provider.security_blocked
+                ),
+                "is_expired": bool(not info or info.get("is_expired")),
+                "remaining_hours": (info or {}).get("remaining_hours", 0),
+                "steamid": provider.steam_id,
+                "has_cookie_autorenew": False,
+                "cookie_cooling": False,
+                "keepalive_mode": provider.describe_mode(),
+                "has_refresh_token": False,
+                "refresh_token_days_left": 0,
+                "has_2fa_autologin": False,
+                "keepalive_note": provider.last_note,
+                "auth_security_blocked": provider.security_blocked,
+                "auth_cooldown_remaining": provider.cooldown_remaining,
+                "automatic_login_paused": status["paused"],
+                "auth_device_name": "",
+                "auth_source": "asf",
+            }
 
         # 同步状态观测（0.3.0）：最近一次成功同步时间/耗时/结果消息 + 最近游玩面板数据
         try:
@@ -574,7 +662,14 @@ class SteamFamilyPlugin(Star):
             old_timeout = self.client.timeout
             old_device_name = self.config.auth_device_name
             self.config = PluginConfig(**raw)
-            if self.auth_manager._ops_busy:
+            if (
+                not self.config.enable_asf
+                and self.asf_provider is not None
+                and self._asf_sync_source is None
+            ):
+                # Turning the new feature off discards its own in-memory credential.
+                self._discard_asf_provider()
+            if self.auth_manager._ops_busy or self._asf_sync_source is not None:
                 # 登录/续期会话期间保持客户端与出口不变，新配置下次再应用。
                 self.config.proxy = old_proxy
                 self.config.request_timeout = old_timeout
@@ -664,6 +759,9 @@ class SteamFamilyPlugin(Star):
         1. 配置缺失 refresh_token / access_token 时，从 SQLite KV 二级备份恢复；
         2. 未配置 steam_id 时，自动从 refresh_token / access_token 的 JWT 声明中推导。
         """
+        if self.config.enable_asf:
+            # ASF 模式不恢复或读取原生长效登录凭据，旧配置保持原样。
+            return
         try:
             for key in ("refresh_token", "access_token"):
                 value = await self.storage.get_kv(key)
@@ -735,10 +833,14 @@ class SteamFamilyPlugin(Star):
             self._spawn(self._drain_pending_notifications())
 
             # 自动保活: access_token 缺失但配置了 refresh_token / 密码重登时，先尝试补齐。
-            if not self.config.access_token and (
-                self.config.refresh_token
-                or self.config.cookie
-                or (self.config.account_name and self.config.password)
+            if (
+                not self.config.enable_asf
+                and not self.config.access_token
+                and (
+                    self.config.refresh_token
+                    or self.config.cookie
+                    or (self.config.account_name and self.config.password)
+                )
             ):
                 try:
                     await self.auth_manager.ensure_valid_access_token(force=False)
@@ -752,7 +854,7 @@ class SteamFamilyPlugin(Star):
                 or self.config.refresh_token
                 or (self.config.account_name and self.config.password)
             )
-            if has_credentials and self.config.steam_id:
+            if self.config.enable_asf or (has_credentials and self.config.steam_id):
                 self._spawn(self._check_and_notify())
 
             # Start background polling loop
@@ -840,12 +942,24 @@ class SteamFamilyPlugin(Star):
                 logger.debug(f"Failed to schedule price watch sweep: {ex}")
         return msg
 
-    async def _recover_after_auth_expired(self, error: SteamAuthExpiredError | None = None) -> bool:
+    async def _recover_after_auth_expired(
+        self,
+        error: SteamAuthExpiredError | None = None,
+        source: AsfSessionProvider | SteamAuthManager | None = None,
+    ) -> bool:
         """Steam 401/403 后先检查显式安全错误，再尝试复用授权（不绕过冷却）。
 
         get_shared_library / get_family_group_id 等遇 SteamAuthExpiredError 时共用，
         返回 True 表示 access_token 已被强制刷新，调用方可安全重试原请求一次。
         """
+        source = source or (
+            self._get_asf_provider() if self.config.enable_asf else self.auth_manager
+        )
+        if isinstance(source, AsfSessionProvider):
+            provider = source
+            await provider.record_api_auth_failure(error.eresult if error else 0)
+            # 只重新读取 ASF 当前令牌，不调用 ASF 登录或强制续签。
+            return await provider.ensure_valid_access_token(force=True)
         logger.info("Steam 返回 401/403，触发强制保活链路后重试...")
         try:
             if error is not None:
@@ -855,7 +969,14 @@ class SteamFamilyPlugin(Star):
             logger.error(f"Force keepalive after 401 failed: {_sanitize_error(e)}")
             return False
 
-    def _auth_failure_message(self) -> str:
+    def _auth_failure_message(
+        self, source: AsfSessionProvider | SteamAuthManager | None = None
+    ) -> str:
+        source = source or (
+            self._get_asf_provider() if self.config.enable_asf else self.auth_manager
+        )
+        if isinstance(source, AsfSessionProvider):
+            return f"⚠️ ASF 托管凭据暂不可用：{source.last_note}。未回退到原生登录。"
         note = self.auth_manager.last_keepalive_note
         return (
             f"⚠️ Steam 凭据未被服务端接受，本次未能恢复：{note or '请检查网络、授权或账号安全提示'}。"
@@ -864,6 +985,32 @@ class SteamFamilyPlugin(Star):
 
     async def _check_and_notify_core(self) -> str:
         self._refresh_config()
+        source: AsfSessionProvider | SteamAuthManager = self.auth_manager
+        try:
+            if self.config.enable_asf:
+                provider = self._get_asf_provider()
+                source = provider
+                self._asf_sync_source = provider
+                try:
+                    if not await provider.ensure_valid_access_token():
+                        return self._auth_failure_message(provider)
+                except Exception as exc:
+                    logger.error(f"ASF 适配层未能获取凭据 ({type(exc).__name__})")
+                    return "⚠️ ASF 适配层读取失败，已停止同步；未回退到原生登录"
+            else:
+                failure = await self._prepare_native_auth()
+                if failure:
+                    return failure
+
+            return await self._sync_library_with_active_credentials(source)
+        finally:
+            if source is self._asf_sync_source:
+                self._asf_sync_source = None
+            if not self.config.enable_asf and self.asf_provider is not None:
+                self._discard_asf_provider()
+
+    async def _prepare_native_auth(self) -> str | None:
+        """原有认证预检保持独立；仅在 enable_asf=False 时执行。"""
         try:
             await self.auth_manager.ensure_state_loaded()
         except Exception as exc:
@@ -897,7 +1044,7 @@ class SteamFamilyPlugin(Star):
 
         # 2. Token 仍缺失时给出针对性指引
         if not self.config.access_token:
-            return self._auth_failure_message()
+            return self._auth_failure_message(self.auth_manager)
 
         # SteamID 缺失时自动从 Access Token JWT 声明或 Refresh Token 声明推导
         if not self.config.steam_id and jwt_info and jwt_info.get("steamid"):
@@ -914,46 +1061,67 @@ class SteamFamilyPlugin(Star):
         if not self.config.steam_id:
             return "⚠️ 未检测到配置：未填写 17 位 SteamID，请在 WebUI 中填入你的 Steam 64 位 ID。"
 
+        return None
+
+    async def _sync_library_with_active_credentials(
+        self, source: AsfSessionProvider | SteamAuthManager
+    ) -> str:
+        """同步/通知逻辑共用，仅切换 token 来源，不把 ASF 凭据写入旧配置。"""
+        using_asf = isinstance(source, AsfSessionProvider)
+        access_token = source.access_token
+        steam_id = source.steam_id
+
+        async def recover(error: SteamAuthExpiredError) -> bool:
+            nonlocal access_token
+            recovered = await self._recover_after_auth_expired(error, source)
+            if recovered:
+                access_token = source.access_token
+            return recovered
+
         try:
-            group_id = self.config.family_group_id
+            group_id = (
+                (self._asf_family_group_id if source is self.asf_provider else "")
+                if using_asf
+                else self.config.family_group_id
+            )
             if not group_id:
-                logger.info(f"Fetching family group id for SteamID {self.config.steam_id}...")
+                logger.info(f"Fetching family group id for SteamID {steam_id}...")
                 try:
-                    group_id = await self.client.get_family_group_id(
-                        self.config.access_token, self.config.steam_id
-                    )
+                    group_id = await self.client.get_family_group_id(access_token, steam_id)
                 except SteamAuthExpiredError as exc:
                     # 与 get_shared_library 相同的 401 恢复链：强制保活后重试一次，
                     # 避免 Token 恰好过期时直接落到底部兜底文案而错过自动恢复。
-                    recovered = await self._recover_after_auth_expired(exc)
+                    recovered = await recover(exc)
                     if not recovered:
-                        return self._auth_failure_message()
-                    group_id = await self.client.get_family_group_id(
-                        self.config.access_token, self.config.steam_id
-                    )
+                        return self._auth_failure_message(source)
+                    group_id = await self.client.get_family_group_id(access_token, steam_id)
                 if not group_id:
-                    return f"⚠️ 无法获取家庭组 ID。该账号 ({self.config.steam_id}) 可能未加入任何 Steam 家庭组，或 Token 权限不足。"
-                self.config.family_group_id = group_id
+                    return f"⚠️ 无法获取家庭组 ID。该账号 ({steam_id}) 可能未加入任何 Steam 家庭组，或 Token 权限不足。"
+                if using_asf:
+                    if source is self.asf_provider:
+                        self._asf_family_group_id = group_id
+                else:
+                    self.config.family_group_id = group_id
                 logger.info(f"Detected family group id: {group_id}")
 
             logger.info(f"Fetching shared library apps for group {group_id}...")
             try:
                 current_apps = await self.client.get_shared_library(
                     group_id,
-                    self.config.access_token,
+                    access_token,
                     filter_non_games=self.config.filter_non_games,
                 )
             except SteamAuthExpiredError as exc:
                 # 先检查安全限制，复用现有授权后最多重试一次。
-                recovered = await self._recover_after_auth_expired(exc)
+                recovered = await recover(exc)
                 if recovered:
                     current_apps = await self.client.get_shared_library(
                         group_id,
-                        self.config.access_token,
+                        access_token,
                         filter_non_games=self.config.filter_non_games,
                     )
                 else:
-                    return self._auth_failure_message()
+                    return self._auth_failure_message(source)
 
             if not current_apps:
                 return f"⚠️ 成功连接到 Steam 家庭组 (ID: {group_id})，但获取到的共享游戏列表为空（可能家庭组内无共享游戏或被 Steam 过滤）。"
@@ -962,15 +1130,14 @@ class SteamFamilyPlugin(Star):
             # 这里在成功拿到 current_apps 后顺手刷新成员游玩时长与最近游玩记录
             # （try/except 记 debug，任何失败都不阻塞检查主流程）。
             try:
-                playtime_entries = await self.client.get_playtime_summary(
-                    group_id, self.config.access_token
-                )
+                playtime_entries = await self.client.get_playtime_summary(group_id, access_token)
                 if playtime_entries:
                     await self.storage.refresh_playtime_stats(playtime_entries)
             except SteamAuthExpiredError as exc:
-                await self.auth_manager.record_api_auth_failure(exc.eresult)
-                if self.auth_manager.security_blocked:
-                    return self._auth_failure_message()
+                manager = source
+                await manager.record_api_auth_failure(exc.eresult)
+                if using_asf or manager.security_blocked:
+                    return self._auth_failure_message(source)
             except Exception as ex:
                 logger.debug(f"Failed to refresh playtime stats: {ex}")
 
@@ -985,9 +1152,7 @@ class SteamFamilyPlugin(Star):
             )
             if all_owners:
                 try:
-                    profiles = await self.client.get_player_summaries(
-                        all_owners, self.config.access_token
-                    )
+                    profiles = await self.client.get_player_summaries(all_owners, access_token)
                     if profiles:
                         await self.storage.save_member_profiles(profiles)
                 except Exception as ex:
@@ -1180,9 +1345,12 @@ class SteamFamilyPlugin(Star):
                 lines.append(f"✅ 家庭库检查完成：基线已更新为 {len(current_apps)} 款游戏。")
             return "\n".join(lines)
         except SteamAuthExpiredError as exc:
-            await self.auth_manager.record_api_auth_failure(exc.eresult)
-            return self._auth_failure_message()
+            manager = source
+            await manager.record_api_auth_failure(exc.eresult)
+            return self._auth_failure_message(source)
         except SteamRateLimitError:
+            if using_asf:
+                await source.record_api_auth_failure(84)
             return "⚠️ 请求过于频繁触发 Steam 限流 (429)，请稍后重试。"
         except Exception as e:
             # 兜底路径必须脱敏：httpx 异常 str 里含完整 access_token=eyJ...，
@@ -1750,7 +1918,8 @@ class SteamFamilyPlugin(Star):
 
                 # 每轮同步先检查凭据；复用、续签能力及有效期由 Steam 决定。
                 has_credentials = bool(
-                    self.config.access_token
+                    self.config.enable_asf
+                    or self.config.access_token
                     or self.config.refresh_token
                     or self.config.cookie
                     or (self.config.account_name and self.config.password)
@@ -1819,6 +1988,10 @@ class SteamFamilyPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def cmd_qr_login(self, event: AstrMessageEvent):
         """扫码登录：固定浏览器设备身份，必须核对 Steam 官方 App 的位置与设备。"""
+        notice = self._asf_native_login_notice()
+        if notice:
+            yield event.plain_result(notice)
+            return
         if self._is_group_chat(event):
             yield event.plain_result(
                 "⚠️ 登录二维码属于敏感授权，请私聊使用 /steam_qr，不要在群里登录。"
@@ -1859,6 +2032,10 @@ class SteamFamilyPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def cmd_relogin(self, event: AstrMessageEvent):
         """手动密码登录：优先记住设备授权，需要手机确认时等待用户处理。"""
+        notice = self._asf_native_login_notice()
+        if notice:
+            yield event.plain_result(notice)
+            return
         if self._is_group_chat(event):
             yield event.plain_result("⚠️ 登录属于敏感凭据操作，请私聊使用 /steam_relogin。")
             return
@@ -1882,6 +2059,10 @@ class SteamFamilyPlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def cmd_refresh(self, event: AstrMessageEvent):
         """手动请求复用已有 Refresh Token，不能绕过冷却或账号安全暂停。"""
+        notice = self._asf_native_login_notice()
+        if notice:
+            yield event.plain_result(notice)
+            return
         yield event.plain_result("⏳ 正在使用 Refresh Token 兑换 Access Token (renewal_type=1)...")
         if not self.config.refresh_token:
             yield event.plain_result(
@@ -1961,6 +2142,38 @@ class SteamFamilyPlugin(Star):
             + "）。此操作只保存配置，不会立即创建新登录设备；需要验证时请私聊 /steam_relogin。"
         )
 
+    @filter.command("steam_asf", alias={"steam asf", "steamASF"})
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def cmd_asf_status(self, event: AstrMessageEvent):
+        """ASF 新功能状态查询，只展示本地缓存，不获取令牌或执行 ASF 命令。"""
+        if not self.config.enable_asf:
+            yield event.plain_result(
+                "🧩 ASF 托管未启用（默认关闭），原有登录和同步功能不变。请在插件配置中启用并填写 IPC 与桥接配置。"
+            )
+            return
+        provider = self._get_asf_provider()
+        status = await provider.get_status()
+        yield event.plain_result(
+            f"🧩 ASF 托管模式\nBot：{status['bot_name']}\n"
+            f"状态：{provider.describe_mode()}\n"
+            f"冷却：{status['cooldown_remaining']} 秒\n说明：{status['message']}\n"
+            "不会调用原生扫码/密码登录，不会导出 Refresh Token；此查询不发起 IPC 请求。"
+        )
+
+    @filter.command("steam_asf_resume", alias={"steam asf_resume", "steamASF恢复"})
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def cmd_asf_resume(self, event: AstrMessageEvent):
+        """在 ASF 中处理账号/IPC 问题后显式恢复本地暂停，不登录、不发请求。"""
+        if not self.config.enable_asf:
+            yield event.plain_result("⚠️ ASF 托管未启用，未修改原有认证状态。")
+            return
+        if self._is_group_chat(event):
+            yield event.plain_result(
+                "⚠️ 请私聊使用 /steam_asf_resume，并先在 ASF/Steam 官方渠道处理问题。"
+            )
+            return
+        yield event.plain_result(await self._get_asf_provider().resume_after_review())
+
     @filter.command("steam_check", alias={"steam check", "steam同步", "家庭库检查"})
     async def cmd_check(self, event: AstrMessageEvent):
         """手动触发一次家庭库变动检查与同步。"""
@@ -2020,7 +2233,7 @@ class SteamFamilyPlugin(Star):
         try:
             all_cached = await self.storage.get_all_cached_apps()
 
-            # 1. 生成全库游戏名清单（全库 1000+ 款游戏名一次性全量喂给大模型）
+            # 1. 生成全库游戏名清单（全库游戏名一次性全量喂给大模型）
             # 这彻底杜绝大模型“误以为某游戏不在家庭库中”的幻觉！
             all_game_names = set()
             for a in all_cached:
@@ -2123,6 +2336,12 @@ class SteamFamilyPlugin(Star):
             "• /steam_dashboard - 查看 Web 看板开启指引\n"
             "• /steam_bind <Token> <SteamID> - 重新绑定鉴权凭据"
         )
+        if self.config.enable_asf:
+            help_msg += (
+                "\n🧩 ASF 托管（新功能，已启用）:\n"
+                "• /steam_asf - 查看 ASF 适配状态（不发起登录）\n"
+                "• /steam_asf_resume - 处理账号/IPC 问题后私聊恢复本地暂停"
+            )
         yield event.plain_result(help_msg)
 
     # --- Agent LLM Tools ---
@@ -2163,4 +2382,6 @@ class SteamFamilyPlugin(Star):
             await self.client.close()
         except Exception:
             pass
+        if self.asf_provider is not None:
+            await self.asf_provider.close()
         logger.info("Steam Family Plugin terminated.")

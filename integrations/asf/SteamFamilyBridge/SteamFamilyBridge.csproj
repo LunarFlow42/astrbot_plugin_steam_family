@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Version>0.2.0</Version>
+    <AssemblyName>SteamFamilyBridge</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <!-- Build against the exact ASF installation; never bundle a second ASF copy. -->
+    <Reference Include="ArchiSteamFarm" HintPath="$(ASFDirectory)/ArchiSteamFarm.dll" Private="false" />
+    <Reference Include="SteamKit2" HintPath="$(ASFDirectory)/SteamKit2.dll" Private="false" />
+    <Reference Include="System.Composition.AttributedModel" HintPath="$(ASFDirectory)/System.Composition.AttributedModel.dll" Private="false" />
+  </ItemGroup>
+
+  <Target Name="ValidateASFDirectory" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(ASFDirectory)/ArchiSteamFarm.dll')" Text="Pass -p:ASFDirectory=/absolute/path/to/ASF-7.0.0.8 (requires ASF 7 / .NET 11 assemblies)." />
+  </Target>
+</Project>
