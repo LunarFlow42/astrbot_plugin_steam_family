@@ -841,6 +841,22 @@
       }).join("");
     }
 
+    function openStoreUrl(url) {
+      if (!url) return;
+      try {
+        const a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => a.remove(), 100);
+      } catch (err) {
+        window.open(url, "_blank");
+      }
+    }
+
     // Helper for Game Card HTML
     function renderGameCardHTML(g) {
       const appid = Number(g.appid) || 0;
@@ -853,7 +869,7 @@
         : '';
       const acquiredBadge = acquiredDate ? `<span style="font-size: 11px; color: var(--steam-blue); background: rgba(25, 153, 255, 0.12); padding: 1px 6px; border-radius: 4px;">⏱️ ${acquiredDate}</span>` : '';
       return `
-        <div class="game-card" data-store-url="${escapeHtml(storeUrl)}" style="cursor: pointer;">
+        <a href="${escapeHtml(storeUrl)}" target="_blank" rel="noopener noreferrer" class="game-card" data-store-url="${escapeHtml(storeUrl)}" style="cursor: pointer; text-decoration: none; color: inherit; display: flex;">
           <div class="game-cover-wrap">
             <img src="${escapeHtml(headerUrl)}" alt="Cover" loading="lazy" onerror="this.onerror=null;this.src='https://cdn.akamai.steamstatic.com/steam/apps/${appid}/header.jpg'">
             ${discountPill}
@@ -869,7 +885,7 @@
               <span class="game-rating">⭐ ${Number(g.positive_rate)}% 好评</span>
             </div>
           </div>
-        </div>
+        </a>
       `;
     }
 
@@ -1221,7 +1237,7 @@
       const storeEl = target.closest("[data-store-url]");
       if (storeEl) {
         const url = storeEl.dataset.storeUrl;
-        if (url) window.open(url, "_blank");
+        if (url) openStoreUrl(url);
         return;
       }
       // 总览页类型标签：快速筛选
